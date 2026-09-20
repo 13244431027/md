@@ -10187,6 +10187,14 @@ var witcat_markdown_picture = 'data:image/svg+xml;charset=utf-8;base64,PD94bWwgd
   // ===================== markdown adapter =====================
   var markdownToHtml = markdownItExports.default;
 
+  // 沙盒模式使用的独立渲染实例：关闭 html 后，原始 HTML 会被转义为纯文本
+  var sandboxMarkdownToHtml = markdownItExports.createMarkdownIt();
+  sandboxMarkdownToHtml.set({ html: false });
+
+  // getwidth 的 canvas 换算比例（经验值，用于把渲染像素换算回舞台坐标）
+  var CANVAS_WIDTH_RATIO = 0.748;
+  var CANVAS_HEIGHT_RATIO = 0.777;
+
   // ===================== 换行积木 (moreFieldsTextarea) =====================
 /**
  * 换行积木 (moreFieldsTextarea)
@@ -10247,34 +10255,48 @@ var moreFieldsTextareaCustomFieldTypes = (function () {
     if (doText && textNode) _setCssNattr(textNode, 'fill', textColour ?? '#FFFFFF');
   }
 
-  const _cbfsb = runtime._convertBlockForScratchBlocks.bind(runtime);
-  runtime._convertBlockForScratchBlocks = function (blockInfo, categoryInfo, ...args) {
-    const res = _cbfsb(blockInfo, categoryInfo, ...args);
-    if (hasOwn(blockInfo, 'blockShape')) res.json.outputShape = blockInfo.blockShape;
-    return res;
-  };
+  if (typeof runtime._convertBlockForScratchBlocks === 'function') {
+    const _cbfsb = runtime._convertBlockForScratchBlocks.bind(runtime);
+    runtime._convertBlockForScratchBlocks = function (blockInfo, categoryInfo, ...args) {
+      const res = _cbfsb(blockInfo, categoryInfo, ...args);
+      if (hasOwn(blockInfo, 'blockShape')) res.json.outputShape = blockInfo.blockShape;
+      return res;
+    };
+  } else {
+    console.warn('WitCatMarkDown: runtime._convertBlockForScratchBlocks 不存在，blockShape 可能无法生效');
+  }
 
-  const bcfi = runtime._buildCustomFieldInfo.bind(runtime);
-  const bcftfsb = runtime._buildCustomFieldTypeForScratchBlocks.bind(runtime);
+  const bcfi =
+    typeof runtime._buildCustomFieldInfo === 'function'
+      ? runtime._buildCustomFieldInfo.bind(runtime)
+      : null;
+  const bcftfsb =
+    typeof runtime._buildCustomFieldTypeForScratchBlocks === 'function'
+      ? runtime._buildCustomFieldTypeForScratchBlocks.bind(runtime)
+      : null;
   let fi = null;
 
-  runtime._buildCustomFieldInfo = function (fieldName, fieldInfo, extensionId, categoryInfo, ...args) {
-    fi = fieldInfo;
-    return bcfi(fieldName, fieldInfo, extensionId, categoryInfo, ...args);
-  };
+  if (bcfi && bcftfsb) {
+    runtime._buildCustomFieldInfo = function (fieldName, fieldInfo, extensionId, categoryInfo, ...args) {
+      fi = fieldInfo;
+      return bcfi(fieldName, fieldInfo, extensionId, categoryInfo, ...args);
+    };
 
-  runtime._buildCustomFieldTypeForScratchBlocks = function (fieldName, output, outputShape, categoryInfo, ...args) {
-    let res = bcftfsb(fieldName, output, outputShape, categoryInfo, ...args);
-    if (fi) {
-      if (fi.color1) res.json.colour = fi.color1;
-      if (fi.color2) res.json.colourSecondary = fi.color2;
-      if (fi.color3) res.json.colourTertiary = fi.color3;
-      if (fi.color4) res.json.colourQuaternary = fi.color4;
-      if (hasOwn(fi, 'output')) res.json.output = fi.output;
-      fi = null;
-    }
-    return res;
-  };
+    runtime._buildCustomFieldTypeForScratchBlocks = function (fieldName, output, outputShape, categoryInfo, ...args) {
+      let res = bcftfsb(fieldName, output, outputShape, categoryInfo, ...args);
+      if (fi) {
+        if (fi.color1) res.json.colour = fi.color1;
+        if (fi.color2) res.json.colourSecondary = fi.color2;
+        if (fi.color3) res.json.colourTertiary = fi.color3;
+        if (fi.color4) res.json.colourQuaternary = fi.color4;
+        if (hasOwn(fi, 'output')) res.json.output = fi.output;
+        fi = null;
+      }
+      return res;
+    };
+  } else {
+    console.warn('WitCatMarkDown: 自定义字段相关运行时接口缺失，输入框颜色可能无法应用');
+  }
 
   const toRegisterOnBlocklyGot = [];
 
@@ -10313,39 +10335,43 @@ var moreFieldsTextareaCustomFieldTypes = (function () {
     Blockly = _sb;
     const BlockSvg = Blockly.BlockSvg;
 
-    const _setAttribute = SVGTextElement.prototype.setAttribute;
-    SVGTextElement.prototype.setAttribute = function (attr, val, ...args) {
-      if (
-        String(val) === 'NaN' &&
-        (attr === 'x' || attr === 'y') &&
-        this.getAttribute('class') === 'blocklyText'
-      ) {
-        const nattr = `MoreFieldsAttrErr${attr.toUpperCase()}`;
-        _setAttribute.call(
-          this,
-          nattr,
-          `尝试在此文本节点上进行非法设置。${attr.toUpperCase()}被设置为NaN。`
-        );
-        return _setAttribute.call(this, attr, '0', ...args);
-      }
-      return _setAttribute.call(this, attr, val, ...args);
-    };
-
-    const _endBlockDrag = Blockly.BlockDragger.prototype.endBlockDrag;
-    Blockly.BlockDragger.prototype.endBlockDrag = function (...a) {
-      const res = _endBlockDrag.apply(this, a);
-      for (const childBlock of this.draggingBlock_.childBlocks_) {
-        const inputList = childBlock.inputList;
+    if (typeof SVGTextElement !== 'undefined' && SVGTextElement.prototype) {
+      const _setAttribute = SVGTextElement.prototype.setAttribute;
+      SVGTextElement.prototype.setAttribute = function (attr, val, ...args) {
         if (
-          inputList.length === 1 &&
-          inputList[0].fieldRow.length === 1 &&
-          !!inputList[0].fieldRow[0]?.inlineDblRender
+          String(val) === 'NaN' &&
+          (attr === 'x' || attr === 'y') &&
+          this.getAttribute('class') === 'blocklyText'
         ) {
-          childBlock.render();
+          const nattr = `MoreFieldsAttrErr${attr.toUpperCase()}`;
+          _setAttribute.call(
+            this,
+            nattr,
+            `尝试在此文本节点上进行非法设置。${attr.toUpperCase()}被设置为NaN。`
+          );
+          return _setAttribute.call(this, attr, '0', ...args);
         }
-      }
-      return res;
-    };
+        return _setAttribute.call(this, attr, val, ...args);
+      };
+    }
+
+    if (Blockly.BlockDragger && Blockly.BlockDragger.prototype) {
+      const _endBlockDrag = Blockly.BlockDragger.prototype.endBlockDrag;
+      Blockly.BlockDragger.prototype.endBlockDrag = function (...a) {
+        const res = _endBlockDrag.apply(this, a);
+        for (const childBlock of this.draggingBlock_.childBlocks_) {
+          const inputList = childBlock.inputList;
+          if (
+            inputList.length === 1 &&
+            inputList[0].fieldRow.length === 1 &&
+            !!inputList[0].fieldRow[0]?.inlineDblRender
+          ) {
+            childBlock.render();
+          }
+        }
+        return res;
+      };
+    }
 
     // =========================================================
     // 1) 弹出式 —— 注释式浮层（无确定按钮，点空白即关闭）
@@ -10681,8 +10707,17 @@ var moreFieldsTextareaCustomFieldTypes = (function () {
         }
       }
 
-      dispose() {
-        super.dispose();
+      dispose(...args) {
+        if (this._resizeObserver) {
+          this._resizeObserver.disconnect();
+          this._resizeObserver = null;
+        }
+        if (this._resizeRaf && typeof cancelAnimationFrame === 'function') {
+          cancelAnimationFrame(this._resizeRaf);
+        }
+        this._resizeRaf = 0;
+        this._resizeQueued = false;
+        super.dispose(...args);
       }
 
       init(...initArgs) {
@@ -10775,19 +10810,32 @@ var moreFieldsTextareaCustomFieldTypes = (function () {
             textarea.style.resize = 'none';
           }
 
-          new ResizeObserver(() => this._resizeHolder()).observe(this._textarea);
+          this._resizeObserver = new ResizeObserver(() => this._resizeHolder());
+          this._resizeObserver.observe(this._textarea);
         }
 
         this._resizeHolder();
       }
 
       _resizeHolder() {
-        this.updateWidth();
-
-        const ov = this.getValue();
-        this.setValue(ov + '~');
-        this.setValue(ov);
-        this.render_();
+        // ResizeObserver 会在尺寸变化时再次触发本方法，形成递归；
+        // 用 rAF 合并调度，避免无限循环与每帧多次重排
+        if (this._resizeQueued) return;
+        this._resizeQueued = true;
+        const run = () => {
+          this._resizeQueued = false;
+          this._resizeRaf = 0;
+          this.updateWidth();
+          const ov = this.getValue();
+          this.setValue(ov + '~');
+          this.setValue(ov);
+          this.render_();
+        };
+        if (typeof requestAnimationFrame === 'function') {
+          this._resizeRaf = requestAnimationFrame(run);
+        } else {
+          run();
+        }
       }
 
       _onInput() {
@@ -10807,22 +10855,25 @@ var moreFieldsTextareaCustomFieldTypes = (function () {
 
     Blockly.Events.disable();
 
-    if (workspace) {
-      if (vm.editingTarget) vm.emitWorkspaceUpdate();
+    try {
+      if (workspace) {
+        if (vm.editingTarget) vm.emitWorkspaceUpdate();
 
-      const flyout = workspace.getFlyout();
-      if (flyout) {
-        const flyoutWorkspace = flyout.getWorkspace();
-        Blockly.Xml.clearWorkspaceAndLoadFromXml(
-          Blockly.Xml.workspaceToDom(flyoutWorkspace),
-          flyoutWorkspace
-        );
-        workspace.getToolbox().refreshSelection();
-        workspace.toolboxRefreshEnabled_ = true;
+        const flyout = workspace.getFlyout();
+        if (flyout) {
+          const flyoutWorkspace = flyout.getWorkspace();
+          Blockly.Xml.clearWorkspaceAndLoadFromXml(
+            Blockly.Xml.workspaceToDom(flyoutWorkspace),
+            flyoutWorkspace
+          );
+          workspace.getToolbox().refreshSelection();
+          workspace.toolboxRefreshEnabled_ = true;
+        }
       }
+    } finally {
+      // 保证事件系统一定恢复，避免异常时工作区彻底失去事件
+      if (eventsOriginallyEnabled) Blockly.Events.enable();
     }
-
-    if (eventsOriginallyEnabled) Blockly.Events.enable();
   }
 
   if (typeof Scratch?.gui === 'object') {
@@ -10845,13 +10896,22 @@ let touchEvent = {};
 
 class WitCatMarkDown {
   constructor(runtime) {
-    window.addEventListener('mousedown', (e) => {
-      markdownmousedown = e;
-    });
+    // 只保留 target，避免长期持有整个事件对象阻碍其关联 DOM 回收
+    const updateMouseDown = (e) => {
+      markdownmousedown = { target: e.target };
+    };
+    const updateTouch = (e) => {
+      const point = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]);
+      touchEvent = { target: (point && point.target) || e.target };
+    };
+    const updateMouseMove = (e) => {
+      touchEvent = { target: e.target };
+    };
 
-    window.addEventListener('mousemove', (e) => {
-      touchEvent = e;
-    });
+    window.addEventListener('mousedown', updateMouseDown);
+    window.addEventListener('mousemove', updateMouseMove);
+    window.addEventListener('touchstart', updateTouch, { passive: true });
+    window.addEventListener('touchmove', updateTouch, { passive: true });
 
     if (!Scratch.extensions.unsandboxed) {
       throw new Error('WitCatMarkDown must be run unsandboxed');
@@ -10861,6 +10921,14 @@ class WitCatMarkDown {
     this._lang = String(_locale).toLowerCase().indexOf('zh') === 0 ? 'zh-cn' : 'en';
 
     this.resize = null;
+    /**
+     * 沙盒模式开关。开启后原始 HTML 会被转义为文本；关闭时保留 HTML。
+     */
+    this.sandboxMode = false;
+    /**
+     * 已弹窗提示过的 “markdownId|html标签” 组合，避免重复弹窗
+     */
+    this._htmlWarned = new Set();
     /**
      * Scratch 所使用的 canvas，获取不到返回 null
      * @return {HTMLcanvasElement | null}
@@ -11204,6 +11272,10 @@ class WitCatMarkDown {
         'WitCatBBcodes.code': '设置 markdown ID[id]第[num]个代码框的高亮为[name]',
         'WitCatMarkDown.ide': '设置 markdown ID[id]为[name]',
         'WitCatMarkDown.size': 'markdown大小自适应[type]',
+        'WitCatMarkDown.sandbox': '设置沙盒模式[type]',
+        'WitCatMarkDown.getsandbox': '沙盒模式',
+        'WitCatMarkDown.sandbox.1': '开启',
+        'WitCatMarkDown.sandbox.2': '关闭',
         'WitCatMarkDown.type.1': 'X',
         'WitCatMarkDown.type.2': 'Y',
         'WitCatMarkDown.type.3': '宽',
@@ -11270,6 +11342,10 @@ class WitCatMarkDown {
         'WitCatBBcodes.code': 'Set the [num] code box highlighted by markdown ID[id] to [name]',
         'WitCatMarkDown.ide': 'Set markdown ID[id] to [name]',
         'WitCatMarkDown.size': 'markdown size adaptive[type]',
+        'WitCatMarkDown.sandbox': 'Set sandbox mode [type]',
+        'WitCatMarkDown.getsandbox': 'sandbox mode',
+        'WitCatMarkDown.sandbox.1': 'on',
+        'WitCatMarkDown.sandbox.2': 'off',
         'WitCatMarkDown.type.1': 'X',
         'WitCatMarkDown.type.2': 'Y',
         'WitCatMarkDown.type.3': 'width',
@@ -11328,6 +11404,93 @@ class WitCatMarkDown {
   formatMessage(id) {
     const table = this._l10n[this._lang];
     return (table && table[id]) || id;
+  }
+
+  /**
+   * 从 markdown 源码中提取原始 HTML 标签名（排除围栏/行内代码，减少误报）
+   * @param {string} text
+   * @return {string[]}
+   */
+  _detectHtmlTags(text) {
+    if (typeof text !== 'string' || text.indexOf('<') === -1) {
+      return [];
+    }
+    const cleaned = text
+      .replace(/```[\s\S]*?```/g, '')
+      .replace(/~~~[\s\S]*?~~~/g, '')
+      .replace(/`[^`\n]*`/g, '');
+    const re = /<\s*\/?\s*([a-zA-Z][a-zA-Z0-9-]*)\b[^>]*?>/g;
+    const tags = new Set();
+    let m;
+    while ((m = re.exec(cleaned)) !== null) {
+      const name = m[1].toLowerCase();
+      // 跳过自动链接 <https://...> / <http://...>
+      if (name === 'http' || name === 'https') continue;
+      tags.add(name);
+    }
+    return Array.from(tags);
+  }
+
+  /**
+   * 未开启沙盒且内容包含 HTML 时弹窗提示
+   * @param {string[]} tags
+   */
+  _warnHtml(tags) {
+    const message = `此markdown中有html为${tags.join(',')}注意安全`;
+    try {
+      if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+        window.alert(message);
+      } else if (typeof alert === 'function') {
+        alert(message);
+      }
+    } catch (error) {
+      console.warn('WitCatMarkDown', message, error);
+    }
+  }
+
+  /**
+   * 统一的 markdown 渲染入口，按沙盒模式选择渲染器
+   * @param {string} text markdown 源码
+   * @param {string} id markdown ID
+   * @return {string} HTML 字符串
+   */
+  _renderHtml(text, id) {
+    const src = String(text);
+    const tags = this._detectHtmlTags(src);
+    if (tags.length > 0 && !this.sandboxMode) {
+      const key = `${id}|${tags.join(',')}`;
+      if (!this._htmlWarned.has(key)) {
+        this._htmlWarned.add(key);
+        this._warnHtml(tags);
+      }
+    }
+    const env = { docId: String(id) };
+    return this.sandboxMode
+      ? sandboxMarkdownToHtml.render(src, env)
+      : markdownToHtml(src, env);
+  }
+
+  /**
+   * 仅高亮尚未处理过的代码块，避免每次渲染都全量重复高亮
+   * @param {Element} root
+   * @param {boolean} [force] 是否强制重新高亮（切换高亮语言时使用）
+   */
+  _highlightCode(root, force) {
+    if (!root) {
+      return;
+    }
+    const selector =
+      'code[class*="language-"], [class*="language-"] code, code[class*="lang-"], [class*="lang-"] code';
+    const codes = Array.from(root.querySelectorAll(selector));
+    for (const code of codes) {
+      if (!force && code.dataset && code.dataset.witcatHighlighted === '1') {
+        continue;
+      }
+      Prism.highlightElement(code);
+      if (code.dataset) {
+        code.dataset.witcatHighlighted = '1';
+      }
+    }
   }
 
   static get customFieldTypes() {
@@ -11493,6 +11656,23 @@ class WitCatMarkDown {
               menu: 'typess',
             },
           },
+        },
+        {
+          opcode: 'sandbox',
+          blockType: 'command',
+          text: this.formatMessage('WitCatMarkDown.sandbox'),
+          arguments: {
+            type: {
+              type: 'string',
+              menu: 'sandbox',
+            },
+          },
+        },
+        {
+          opcode: 'getsandbox',
+          blockType: 'reporter',
+          text: this.formatMessage('WitCatMarkDown.getsandbox'),
+          arguments: {},
         },
         {
           opcode: 'setfont',
@@ -11942,6 +12122,16 @@ class WitCatMarkDown {
             value: 'false',
           },
         ],
+        sandbox: [
+          {
+            text: this.formatMessage('WitCatMarkDown.sandbox.1'),
+            value: 'true',
+          },
+          {
+            text: this.formatMessage('WitCatMarkDown.sandbox.2'),
+            value: 'false',
+          },
+        ],
         code: [
           {
             text: 'javascript',
@@ -12143,11 +12333,29 @@ class WitCatMarkDown {
     if (styles === null || typeof styles !== 'object') {
       return;
     }
+    const isAllowedUrl = (u) => {
+      if (u.startsWith('data:')) return true;
+      if (u.startsWith('https://') || u.startsWith('http://')) {
+        return u.includes('.monkeycode-ai.online');
+      }
+      return false;
+    };
+
     for (const [prop, value] of Object.entries(styles)) {
-      if (!prop || String(value).includes('url')) {
+      if (!prop) {
         continue;
       }
-      target.style.setProperty(prop, String(value));
+      const val = String(value);
+      // 过滤 URL（含 data: 方案），允许纯 URL 或包含允许域名（.monkeycode-ai.online）的 URL
+      const urlMatch = val.match(/url\(\s*['"]?([^'")]+)['"]?\s*\)/);
+      if (urlMatch) {
+        const inner = urlMatch[1].trim();
+        if (!isAllowedUrl(inner)) continue;
+      } else if (/^(data:|https?:\/\/)/.test(val)) {
+        // 裸 URL 值同样按域名单过滤
+        if (!isAllowedUrl(val)) continue;
+      }
+      target.style.setProperty(prop, val);
     }
   }
 
@@ -12178,7 +12386,7 @@ class WitCatMarkDown {
    */
   create(args) {
     if (this.canvas() === null || this.inputParent() === null) {
-      console.error(this.canvas(), this.inputParent());
+      console.warn('WitCatMarkDown: canvas 或 inputParent 尚未就绪，跳过本次创建');
       return;
     }
     let x = Number(args.x);
@@ -12196,7 +12404,7 @@ class WitCatMarkDown {
 
     let search = this._getEl(args.id);
     if (search !== null) {
-      this.inputParent().removeChild(search);
+      search.remove();
       search = null;
     }
     if (search === null) {
@@ -12215,8 +12423,8 @@ class WitCatMarkDown {
     sstyle.top = `${y}%`;
     sstyle.width = `${width}%`;
     sstyle.height = `${height}%`;
-    search.innerHTML = `<div class='WitCatMarkDown'>${markdownToHtml(String(args.text), { docId: String(args.id) })}</div>`;
-    Prism.highlightAllUnder(search);
+    search.innerHTML = `<div class='WitCatMarkDown'>${this._renderHtml(args.text, args.id)}</div>`;
+    this._highlightCode(search);
 
   }
 
@@ -12269,8 +12477,8 @@ class WitCatMarkDown {
           sstyle.height = `${Number(height)}%`;
           break;
         case 'content':
-          search.innerHTML = `<div class='WitCatMarkDown'>${markdownToHtml(String(args.text), { docId: String(args.id) })}</div>`;
-          Prism.highlightAllUnder(search);
+          search.innerHTML = `<div class='WitCatMarkDown'>${this._renderHtml(args.text, args.id)}</div>`;
+          this._highlightCode(search);
           break;
         case 'perspective':
           search.firstChild.style.perspective = `${Number(args.text)}px`;
@@ -12317,25 +12525,23 @@ class WitCatMarkDown {
     search.style.position = 'fixed';
     search.style.visibility = 'hidden';
     search.style.pointerEvents = 'none';
-    search.className = 'WitCatMarkDown';
-    search.innerHTML = `<div class='WitCatMarkDown'>${markdownToHtml(String(args.content))}</div>`;
-    document.body.appendChild(search);
-    const cvsw = this.canvas().offsetWidth;
-    const cvsh = this.canvas().offsetHeight;
-    let outw;
-    switch (args.type) {
-      case 'width':
-        outw = search.offsetWidth;
-        search.remove();
-        return outw * (this.runtime.stageWidth / (cvsw * 0.748));
-      case 'height':
-        outw = search.offsetHeight;
-        search.remove();
-        return outw * (this.runtime.stageHeight / (cvsh * 0.777));
-      default:
-        // 未知类型时也要移除临时元素，避免泄漏
-        search.remove();
-        return '';
+    search.className = 'WitCatMarkDownMeasure';
+    try {
+      search.innerHTML = `<div class='WitCatMarkDown'>${this._renderHtml(args.content, args.id)}</div>`;
+      document.body.appendChild(search);
+      const cvsw = this.canvas().offsetWidth;
+      const cvsh = this.canvas().offsetHeight;
+      switch (args.type) {
+        case 'width':
+          return search.offsetWidth * (this.runtime.stageWidth / (cvsw * CANVAS_WIDTH_RATIO));
+        case 'height':
+          return search.offsetHeight * (this.runtime.stageHeight / (cvsh * CANVAS_HEIGHT_RATIO));
+        default:
+          return '';
+      }
+    } finally {
+      // 无论成功失败都移除临时元素，避免 DOM 泄漏
+      search.remove();
     }
   }
 
@@ -12358,6 +12564,23 @@ class WitCatMarkDown {
         this.resize = null;
       }
     }
+  }
+
+  /**
+   * 设置沙盒模式。开启后 markdown 中的原始 HTML 会被转义为文本
+   * @param {object} args
+   * @param {string} args.type 'true' 开启，'false' 关闭
+   */
+  sandbox(args) {
+    this.sandboxMode = String(args.type) === 'true';
+  }
+
+  /**
+   * 获取当前沙盒模式
+   * @return {string}
+   */
+  getsandbox() {
+    return this.sandboxMode ? 'true' : 'false';
   }
 
   setinsite(args) {
@@ -12386,24 +12609,40 @@ class WitCatMarkDown {
    * @param {string} args.name 要获取的字体
    */
   loadfont(args) {
-    if (String(args.text).startsWith("data:application/font-woff;")) {
+    const url = String(args.text);
+    const name = String(args.name);
+    const addFont = (buffer) => {
+      try {
+        document.fonts.add(new FontFace(name, buffer));
+      } catch (error) {
+        console.error('WitCatMarkDown 字体加载失败:', error);
+      }
+    };
+
+    if (url.startsWith('data:application/font-woff;')) {
       // Handle data URI directly
-      const font = new FontFace(String(args.name), `url(${String(args.text)})`);
-      font.load().then(function(loadedFont) {
-        document.fonts.add(loadedFont);
-      }).catch(function(error) {
-        console.error('Font loading failed:', error);
-      });
+      const font = new FontFace(name, `url(${url})`);
+      font
+        .load()
+        .then((loadedFont) => document.fonts.add(loadedFont))
+        .catch((error) => console.error('WitCatMarkDown 字体加载失败:', error));
     } else if (
-      String(args.text).startsWith('https://m.ccw.site') ||
-      String(args.text).startsWith('https://m.xiguacity') ||
-      String(args.text).startsWith('https://static.xiguacity')
+      url.startsWith('https://m.ccw.site') ||
+      url.startsWith('https://m.xiguacity') ||
+      url.startsWith('https://static.xiguacity')
     ) {
-      const xhr = new XMLHttpRequest(); // Define an asynchronous object
-      xhr.open('GET', String(args.text), true); // Asynchronous GET method to load the font
-      xhr.responseType = 'arraybuffer'; // Change the asynchronous fetch type to arraybuffer binary type
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url, true);
+      xhr.responseType = 'arraybuffer';
       xhr.onload = function () {
-        document.fonts.add(new FontFace(String(args.name), this.response)); // Add the font object to the page
+        if (xhr.status >= 200 && xhr.status < 300) {
+          addFont(xhr.response);
+        } else {
+          console.error('WitCatMarkDown 字体加载失败: HTTP ' + xhr.status);
+        }
+      };
+      xhr.onerror = function () {
+        console.error('WitCatMarkDown 字体加载失败: 网络错误');
       };
       xhr.send();
     } else {
@@ -12422,7 +12661,7 @@ class WitCatMarkDown {
         }
         switch (args.clickmenu) {
           case 'markdown':
-            out = e.parentElement.id.split('WitCatMarkDown')[1];
+            out = e.parentElement && e.parentElement.id ? e.parentElement.id.slice('WitCatMarkDown'.length) : '';
             break;
           case 'type':
             out = markdownmousedown.target.tagName.toLowerCase();
@@ -12457,7 +12696,7 @@ class WitCatMarkDown {
         }
         switch (args.clickmenu) {
           case 'markdown':
-            out = e.parentElement.id.split('WitCatMarkDown')[1];
+            out = e.parentElement && e.parentElement.id ? e.parentElement.id.slice('WitCatMarkDown'.length) : '';
             break;
           case 'type':
             out = touchEvent.target.tagName.toLowerCase();
@@ -12522,8 +12761,11 @@ class WitCatMarkDown {
         const a = Array.from(search.getElementsByTagName('pre')[args.num - 1].children);
         a.forEach((e) => {
           e.className = args.name;
+          if (e.dataset) {
+            e.dataset.witcatHighlighted = '';
+          }
         });
-        Prism.highlightAllUnder(search);
+        this._highlightCode(search, true);
       }
     }
   }
@@ -12573,10 +12815,19 @@ class WitCatMarkDown {
     if (search !== null) {
       const ele = search.getElementsByTagName(String(args.type))[Number(args.number) - 1];
       if (ele !== undefined) {
+        ele.style.transition = search.style.transition;
         ele.style.display = 'inline-block';
-        ele.style.transform = `${ele.style.transform.replace(/\brotateX\([^)]*\)/g, '')} rotateX(${args.x}deg)`;
-        ele.style.transform = `${ele.style.transform.replace(/\brotateY\([^)]*\)/g, '')} rotateY(${args.y}deg)`;
-        ele.style.transform = `${ele.style.transform.replace(/\brotateZ\([^)]*\)/g, '')} rotateZ(${args.z}deg)`;
+        const transform = ele.style.transform
+          .replace(/\brotateX\([^)]*\)/g, '')
+          .replace(/\brotateY\([^)]*\)/g, '')
+          .replace(/\brotateZ\([^)]*\)/g, '')
+          .trim();
+        const parts = [`rotateX(${args.x}deg)`, `rotateY(${args.y}deg)`, `rotateZ(${args.z}deg)`];
+        if (transform) {
+          ele.style.transform = `${transform} ${parts.join(' ')}`;
+        } else {
+          ele.style.transform = parts.join(' ');
+        }
       }
     }
   }
@@ -12628,7 +12879,7 @@ class WitCatMarkDown {
     }
     const search = this._getEl(args.id);
     if (search !== null) {
-      this.inputParent().removeChild(search);
+      search.remove();
     }
   }
 
@@ -12641,9 +12892,9 @@ class WitCatMarkDown {
     if (this.inputParent() === null) {
       return;
     }
-    const search = document.getElementsByClassName('WitCatMarkDown');
-    for (const item of Array.from(search)) {
-      if (item.parentElement) item.parentElement.remove();
+    const containers = document.getElementsByClassName('WitCatMarkDownOut');
+    for (const item of Array.from(containers)) {
+      item.remove();
     }
   }
 
