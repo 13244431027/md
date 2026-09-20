@@ -10210,12 +10210,14 @@ var moreFieldsTextareaCustomFieldTypes = (function () {
   let Blockly = null;
 
   const _LDC = function _LightenDarkenColor(col, amt) {
-    const num = parseInt(col.replace('#', ''), 16);
-    const r = (num >> 16) + amt;
-    const b = ((num >> 8) & 0x00FF) + amt;
-    const g = (num & 0x0000FF) + amt;
-    const newColour = g | (b << 8) | (r << 16);
-    return (col.at(0) === '#' ? '#' : '') + newColour.toString(16);
+    const colStr = String(col);
+    const num = parseInt(colStr.replace('#', ''), 16) || 0;
+    const clamp = (v) => Math.max(0, Math.min(255, v));
+    const r = clamp((num >> 16) + amt);
+    const g = clamp(((num >> 8) & 0x00FF) + amt);
+    const b = clamp((num & 0x0000FF) + amt);
+    const newColour = (r << 16) | (g << 8) | b;
+    return (colStr.charAt(0) === '#' ? '#' : '') + newColour.toString(16).padStart(6, '0');
   };
 
   function _setCssNattr(node, attr, value) {
@@ -10230,6 +10232,7 @@ var moreFieldsTextareaCustomFieldTypes = (function () {
     if (!parent) return;
 
     const path = self?.svgPath_;
+    if (!path) return;
     const argumentSvg = path?.parentNode;
     const textNode = argumentSvg.querySelector('g.blocklyEditableText text');
     const oldFirstColour = parent.colour_;
@@ -10871,6 +10874,7 @@ class WitCatMarkDown {
       } catch (err) {
         return null;
       }
+      return null;
     };
 
     /**
@@ -10894,18 +10898,20 @@ class WitCatMarkDown {
      * 创建滚动条
      */
     document.documentElement.style.setProperty('--witcat-markdown-scale', '1');
+    if (document.getElementById('WitCatMarkDownStyles') === null) {
     const ScrollStyle = document.createElement('style');
+    ScrollStyle.id = 'WitCatMarkDownStyles';
     ScrollStyle.innerText = `
-      h1{
+      .WitCatMarkDown h1{
           font-size:2.0em;
       }
-      h3{
+      .WitCatMarkDown h3{
           font-size:1.17em;
       }
-      h5{
+      .WitCatMarkDown h5{
           font-size:0.83em;
       }
-      h6{
+      .WitCatMarkDown h6{
           font-size:0.67em;
       }
       .WitCatMarkDownOut::-webkit-scrollbar{
@@ -11015,8 +11021,8 @@ class WitCatMarkDown {
       .WitCatMarkDown .footnote-backref{
         margin-left: 0.25em;
       }
-      code[class*=language-],
-pre[class*=language-] {
+      .WitCatMarkDown code[class*=language-],
+.WitCatMarkDown pre[class*=language-] {
     color: #000;
     background: 0 0;
     text-shadow: none;
@@ -11037,125 +11043,125 @@ pre[class*=language-] {
     hyphens: none
 }
 
-code[class*=language-] ::-moz-selection,
-code[class*=language-]::-moz-selection,
-pre[class*=language-] ::-moz-selection,
-pre[class*=language-]::-moz-selection {
+.WitCatMarkDown code[class*=language-] ::-moz-selection,
+.WitCatMarkDown code[class*=language-]::-moz-selection,
+.WitCatMarkDown pre[class*=language-] ::-moz-selection,
+.WitCatMarkDown pre[class*=language-]::-moz-selection {
     text-shadow: none;
     background: #b3d4fc
 }
 
-code[class*=language-] ::selection,
-code[class*=language-]::selection,
-pre[class*=language-] ::selection,
-pre[class*=language-]::selection {
+.WitCatMarkDown code[class*=language-] ::selection,
+.WitCatMarkDown code[class*=language-]::selection,
+.WitCatMarkDown pre[class*=language-] ::selection,
+.WitCatMarkDown pre[class*=language-]::selection {
     text-shadow: none;
     background: #b3d4fc
 }
 
 @media print {
 
-    code[class*=language-],
-    pre[class*=language-] {
+    .WitCatMarkDown code[class*=language-],
+    .WitCatMarkDown pre[class*=language-] {
         text-shadow: none
     }
 }
 
-pre[class*=language-] {
+.WitCatMarkDown pre[class*=language-] {
     padding: 1em;
     margin: .5em 0;
     overflow: auto
 }
 
-:not(pre)>code[class*=language-],
-pre[class*=language-] {
+.WitCatMarkDown :not(pre)>code[class*=language-],
+.WitCatMarkDown pre[class*=language-] {
     background: #00000000
 }
 
-:not(pre)>code[class*=language-] {
+.WitCatMarkDown :not(pre)>code[class*=language-] {
     padding: .1em;
     border-radius: .3em;
     white-space: normal
 }
 
-.token.cdata,
-.token.comment,
-.token.doctype,
-.token.prolog {
+.WitCatMarkDown .token.cdata,
+.WitCatMarkDown .token.comment,
+.WitCatMarkDown .token.doctype,
+.WitCatMarkDown .token.prolog {
     color: #708090
 }
 
-.token.punctuation {
+.WitCatMarkDown .token.punctuation {
     color: #999
 }
 
-.token.namespace {
+.WitCatMarkDown .token.namespace {
     opacity: .7
 }
 
-.token.boolean,
-.token.constant,
-.token.deleted,
-.token.number,
-.token.property,
-.token.symbol,
-.token.tag {
+.WitCatMarkDown .token.boolean,
+.WitCatMarkDown .token.constant,
+.WitCatMarkDown .token.deleted,
+.WitCatMarkDown .token.number,
+.WitCatMarkDown .token.property,
+.WitCatMarkDown .token.symbol,
+.WitCatMarkDown .token.tag {
     color: #905
 }
 
-.token.attr-name,
-.token.builtin,
-.token.char,
-.token.inserted,
-.token.selector,
-.token.string {
+.WitCatMarkDown .token.attr-name,
+.WitCatMarkDown .token.builtin,
+.WitCatMarkDown .token.char,
+.WitCatMarkDown .token.inserted,
+.WitCatMarkDown .token.selector,
+.WitCatMarkDown .token.string {
     color: #690
 }
 
-.language-css .token.string,
-.style .token.string,
-.token.entity,
-.token.operator,
-.token.url {
+.WitCatMarkDown .language-css .token.string,
+.WitCatMarkDown .style .token.string,
+.WitCatMarkDown .token.entity,
+.WitCatMarkDown .token.operator,
+.WitCatMarkDown .token.url {
     color: #9a6e3a;
     background: hsla(0, 0%, 100%, .5)
 }
 
-.token.atrule,
-.token.attr-value,
-.token.keyword {
+.WitCatMarkDown .token.atrule,
+.WitCatMarkDown .token.attr-value,
+.WitCatMarkDown .token.keyword {
     color: #07a
 }
 
-.token.class-name,
-.token.function {
+.WitCatMarkDown .token.class-name,
+.WitCatMarkDown .token.function {
     color: #dd4a68
 }
 
-.token.important,
-.token.regex,
-.token.variable {
+.WitCatMarkDown .token.important,
+.WitCatMarkDown .token.regex,
+.WitCatMarkDown .token.variable {
     color: #e90
 }
 
-.token.bold,
-.token.important {
+.WitCatMarkDown .token.bold,
+.WitCatMarkDown .token.important {
     font-weight: 700
 }
 
-.token.italic {
+.WitCatMarkDown .token.italic {
     font-style: italic
 }
 
-.token.entity {
+.WitCatMarkDown .token.entity {
     cursor: help
 }
 
-.token a {
+.WitCatMarkDown .token a {
     color: inherit
 }
 
-span.inline-color-wrapper {
+.WitCatMarkDown span.inline-color-wrapper {
     background: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyIDIiPjxwYXRoIGZpbGw9ImdyYXkiIGQ9Ik0wIDBoMnYySDB6Ii8+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0wIDBoMXYxSDB6TTEgMWgxdjFIMXoiLz48L3N2Zz4=);
     background-position: center;
     background-size: 110%;
@@ -11169,27 +11175,14 @@ span.inline-color-wrapper {
     overflow: hidden
 }
 
-span.inline-color {
+.WitCatMarkDown span.inline-color {
     display: block;
     height: 120%;
     width: 120%
 }
       `;
     document.body.appendChild(ScrollStyle);
-    const script = document.createElement("script");
-    script.type = "text/javascript";
-    script.innerText = `
-    function showText(a) {
-      if (a.innerText === '展开' || a.innerText === 'more') {
-        a.parentElement.style.height = '100%';
-      }
-      else if (a.innerText === '收起' || a.innerText === 'fold') {
-        a.parentElement.style.height = (a.parentElement.getAttribute('height')) + 'px';
-      }
-      a.innerText = a.innerText === 'more' ? 'fold' : a.innerText === 'fold' ? 'more' : a.innerText === '展开' ? '收起' : '展开';
     }
-    `
-    document.body.appendChild(script)
 
     this._l10n = {
       'zh-cn': {
@@ -12130,34 +12123,31 @@ span.inline-color {
     if (this.canvas() === null || this.inputParent() === null) {
       return;
     }
-    let search = null;
-    let search_1 = document.getElementById(`WitCatMarkDown${args.id}`);
-    if (search_1 instanceof HTMLDivElement) {
-      search = search_1;
+    const search = this._getEl(args.id);
+    if (search === null || !(Number(args.num) > 0)) {
+      return;
     }
-    if (search !== null) {
-      if (Number(args.num) > 0) {
-        let target = search.getElementsByTagName(args.type)[args.num - 1];
-        if (target !== undefined) {
-          try {
-            let styles = JSON.parse(args.text);
-            let styles_1 = Object.keys(styles);
-            let styles_2 = "";
-            let forbid = [];
-            styles_1.forEach(e => {
-              if (!forbid.includes(e))
-                if (!styles[e].includes("url"))
-                  styles_2 += `${e}:${styles[e]};`;
-            });
-            target.style = styles_2;
-          }
-          catch (e) {
-            console.error("WitCatMarkDown", e);
-            if (e.message.includes("is not valid JSON"))
-              console.error("WitCatMarkDown", "请输入正确的json字符串");
-          }
-        }
+    const target = search.getElementsByTagName(String(args.type))[args.num - 1];
+    if (target === undefined) {
+      return;
+    }
+    let styles;
+    try {
+      styles = JSON.parse(args.text);
+    } catch (e) {
+      console.error("WitCatMarkDown", e);
+      if (e.message.includes("is not valid JSON"))
+        console.error("WitCatMarkDown", "请输入正确的json字符串");
+      return;
+    }
+    if (styles === null || typeof styles !== 'object') {
+      return;
+    }
+    for (const [prop, value] of Object.entries(styles)) {
+      if (!prop || String(value).includes('url')) {
+        continue;
       }
+      target.style.setProperty(prop, String(value));
     }
   }
 
@@ -12170,7 +12160,16 @@ span.inline-color {
    */
   _clamp(x, min, max) {
     return isNaN(x) ? min : x < min ? min : x > max ? max : x;
-    // return isNaN(x) ? min : Math.min(max, Math.max(min, x));
+  }
+
+  /**
+   * 按 ID 获取 markdown 容器（.WitCatMarkDownOut）
+   * @param {string} id markdown ID
+   * @return {HTMLDivElement | null}
+   */
+  _getEl(id) {
+    const el = document.getElementById(`WitCatMarkDown${id}`);
+    return el instanceof HTMLDivElement ? el : null;
   }
 
   /**
@@ -12195,12 +12194,7 @@ span.inline-color {
     width = (width / this.runtime.stageWidth) * 100;
     height = (height / this.runtime.stageHeight) * 100;
 
-    /** @type {HTMLDivElement|null} */
-    let search = null;
-    const search_1 = document.getElementById(`WitCatMarkDown${args.id}`);
-    if (search_1 instanceof HTMLDivElement) {
-      search = search_1;
-    }
+    let search = this._getEl(args.id);
     if (search !== null) {
       this.inputParent().removeChild(search);
       search = null;
@@ -12227,11 +12221,7 @@ span.inline-color {
   }
 
   imgstyle(args) {
-    let search = null;
-    const search_1 = document.getElementById(`WitCatMarkDown${args.id}`);
-    if (search_1 instanceof HTMLDivElement) {
-      search = search_1;
-    }
+    const search = this._getEl(args.id);
     if (search !== null) {
       if (search.getElementsByTagName('img').length > args.num - 1 && args.num > 0) {
         search.getElementsByTagName('img')[args.num - 1].style.width = args.width == '' ? '' : `${args.width}px`;
@@ -12248,11 +12238,7 @@ span.inline-color {
    * @param {SCarg} args.text 属性值
    */
   set(args) {
-    let search = null;
-    const search_1 = document.getElementById(`WitCatMarkDown${args.id}`);
-    if (search_1 instanceof HTMLDivElement) {
-      search = search_1;
-    }
+    const search = this._getEl(args.id);
     if (search !== null) {
       const sstyle = search.style;
       let x;
@@ -12308,22 +12294,14 @@ span.inline-color {
    * @param {string} args.name 要设置的字体
    */
   setfont(args) {
-    let search = null;
-    const search_1 = document.getElementById(`WitCatMarkDown${args.id}`);
-    if (search_1 instanceof HTMLDivElement) {
-      search = search_1;
-    }
+    const search = this._getEl(args.id);
     if (search !== null) {
       search.style.fontFamily = `"${args.name}"`;
     }
   }
 
   ide(args) {
-    let search = null;
-    const search_1 = document.getElementById(`WitCatMarkDown${args.id}`);
-    if (search_1 instanceof HTMLDivElement) {
-      search = search_1;
-    }
+    const search = this._getEl(args.id);
     if (search !== null) {
       search.setAttribute('contenteditable', args.name);
       search.style.outline = 'none';
@@ -12368,9 +12346,11 @@ span.inline-color {
     if (args.type === 'true') {
       if (this.resize === null) {
         this.resize = new ResizeObserver(() => {
-          document.documentElement.style.setProperty('--witcat-markdown-scale', `scale(${parseFloat(this.canvas().offsetWidth) / 360})`);
+          const cv = this.canvas();
+          if (cv === null) return;
+          document.documentElement.style.setProperty('--witcat-markdown-scale', `scale(${parseFloat(cv.offsetWidth) / 360})`);
         });
-        this.resize.observe(this.canvas(), { attributes: true, attributeFilter: ['style'] });
+        this.resize.observe(this.canvas(), { box: 'content-box' });
       }
     } else {
       if (this.resize !== null) {
@@ -12381,10 +12361,8 @@ span.inline-color {
   }
 
   setinsite(args) {
-    let search = null;
-    const search_1 = document.getElementById(`WitCatMarkDown${args.id}`);
-    if (search_1 instanceof HTMLDivElement) {
-      search = search_1;
+    const search = this._getEl(args.id);
+    if (search !== null) {
       const ele = search.getElementsByTagName(String(args.type))[Number(args.number) - 1];
       if (ele !== undefined) {
         switch (String(args.input)) {
@@ -12435,7 +12413,7 @@ span.inline-color {
 
   click(args) {
     let out = '';
-    if (JSON.stringify(markdownmousedown) !== '{}') {
+    if (markdownmousedown.target) {
       // getElementsByClassName 返回 HTMLCollection，没有 forEach，需要先转成数组
       const containers = Array.from(document.getElementsByClassName('WitCatMarkDown'));
       for (const e of containers) {
@@ -12470,7 +12448,7 @@ span.inline-color {
 
   touchs(args) {
     let out = '';
-    if (JSON.stringify(touchEvent) !== '{}') {
+    if (touchEvent.target) {
       // getElementsByClassName 返回 HTMLCollection，没有 forEach，需要先转成数组
       const containers = Array.from(document.getElementsByClassName('WitCatMarkDown'));
       for (const e of containers) {
@@ -12504,34 +12482,30 @@ span.inline-color {
   }
 
   touch(args) {
-    let search = null;
-    const search_1 = document.getElementById(`WitCatMarkDown${args.id}`);
-    if (search_1 instanceof HTMLDivElement) {
-      search = search_1;
+    const search = this._getEl(args.id);
+    if (search !== null) {
       if (Number(args.number) > 0) {
         const ele = search.getElementsByTagName(String(args.type))[Number(args.number) - 1];
         if (ele !== undefined) {
-          return JSON.stringify(touchEvent) !== '{}' && touchEvent.target === ele;
+          return Boolean(touchEvent.target) && touchEvent.target === ele;
         }
       } else {
         // getElementsByTagName 返回 HTMLCollection，没有 some，需要先转成数组
         const ele = Array.from(search.getElementsByTagName(String(args.type)));
-        return JSON.stringify(touchEvent) !== '{}' && ele.some((e) => e === touchEvent.target);
+        return Boolean(touchEvent.target) && ele.some((e) => e === touchEvent.target);
       }
     }
     return false;
   }
 
   move(args) {
-    let search = null;
-    const search_1 = document.getElementById(`WitCatMarkDown${args.id}`);
-    if (search_1 instanceof HTMLDivElement) {
-      search = search_1;
+    const search = this._getEl(args.id);
+    if (search !== null) {
       const ele = search.getElementsByTagName(String(args.type))[Number(args.number) - 1];
       if (ele !== undefined) {
         ele.style.transition = search.style.transition;
         ele.style.display = 'inline-block';
-        const regex = /translate\([^,]+px, [^,]+px\)/g;
+        const regex = /\btranslate\([^)]*\)/g;
         ele.style.transform = `${ele.style.transform.replace(regex, '')} translate(${args.x}px,${args.y}px)`;
       }
     }
@@ -12542,11 +12516,7 @@ span.inline-color {
    * @param {object} args
    */
   code(args) {
-    let search = null;
-    const search_1 = document.getElementById(`WitCatMarkDown${args.id}`);
-    if (search_1 instanceof HTMLDivElement) {
-      search = search_1;
-    }
+    const search = this._getEl(args.id);
     if (search !== null) {
       if (search.getElementsByTagName('pre').length > args.num - 1 && args.num > 0) {
         const a = Array.from(search.getElementsByTagName('pre')[args.num - 1].children);
@@ -12559,45 +12529,39 @@ span.inline-color {
   }
 
   scale(args) {
-    let search = null;
-    const search_1 = document.getElementById(`WitCatMarkDown${args.id}`);
-    if (search_1 instanceof HTMLDivElement) {
-      search = search_1;
+    const search = this._getEl(args.id);
+    if (search !== null) {
       const ele = search.getElementsByTagName(String(args.type))[Number(args.number) - 1];
       if (ele !== undefined) {
         ele.style.transition = search.style.transition;
         ele.style.display = 'inline-block';
-        const regex = /scale\([^,], [^,]\)/g;
+        const regex = /\bscale\([^)]*\)/g;
         ele.style.transform = `${ele.style.transform.replace(regex, '')} scale(${args.x},${args.y})`;
       }
     }
   }
 
   rot(args) {
-    let search = null;
-    const search_1 = document.getElementById(`WitCatMarkDown${args.id}`);
-    if (search_1 instanceof HTMLDivElement) {
-      search = search_1;
+    const search = this._getEl(args.id);
+    if (search !== null) {
       const ele = search.getElementsByTagName(String(args.type))[Number(args.number) - 1];
       if (ele !== undefined) {
         ele.style.transition = search.style.transition;
         ele.style.display = 'inline-block';
-        const regex = /rotate\([^)]+deg\)/g;
+        const regex = /\brotate\([^)]*\)/g;
         ele.style.transform = `${ele.style.transform.replace(regex, '')} rotate(${args.y}deg)`;
       }
     }
   }
 
   dmove(args) {
-    let search = null;
-    const search_1 = document.getElementById(`WitCatMarkDown${args.id}`);
-    if (search_1 instanceof HTMLDivElement) {
-      search = search_1;
+    const search = this._getEl(args.id);
+    if (search !== null) {
       const ele = search.getElementsByTagName(String(args.type))[Number(args.number) - 1];
       if (ele !== undefined) {
         ele.style.transition = search.style.transition;
         ele.style.display = 'inline-block';
-        const regex = /translate3d\([^,]+px, [^,]+px, [^,]+px\)/g;
+        const regex = /\btranslate3d\([^)]*\)/g;
         ele.style.transform = `${ele.style.transform.replace(regex, '')} translate3d(${args.x}px,${args.y}px,${args.z
           }px)`;
       }
@@ -12605,34 +12569,28 @@ span.inline-color {
   }
 
   drot(args) {
-    let search = null;
-    const search_1 = document.getElementById(`WitCatMarkDown${args.id}`);
-    if (search_1 instanceof HTMLDivElement) {
-      search = search_1;
+    const search = this._getEl(args.id);
+    if (search !== null) {
       const ele = search.getElementsByTagName(String(args.type))[Number(args.number) - 1];
       if (ele !== undefined) {
         ele.style.display = 'inline-block';
-        ele.style.transform = `${ele.style.transform.replace(/rotateX\([^,]+deg\)/g, '')} rotateX(${args.x}deg)`;
-        ele.style.transform = `${ele.style.transform.replace(/rotateY\([^,]+deg\)/g, '')} rotateY(${args.y}deg)`;
-        ele.style.transform = `${ele.style.transform.replace(/rotateZ\([^,]+deg\)/g, '')} rotateZ(${args.z}deg)`;
+        ele.style.transform = `${ele.style.transform.replace(/\brotateX\([^)]*\)/g, '')} rotateX(${args.x}deg)`;
+        ele.style.transform = `${ele.style.transform.replace(/\brotateY\([^)]*\)/g, '')} rotateY(${args.y}deg)`;
+        ele.style.transform = `${ele.style.transform.replace(/\brotateZ\([^)]*\)/g, '')} rotateZ(${args.z}deg)`;
       }
     }
   }
 
   transition(args) {
-    let search = null;
-    const search_1 = document.getElementById(`WitCatMarkDown${args.id}`);
-    if (search_1 instanceof HTMLDivElement) {
-      search = search_1;
+    const search = this._getEl(args.id);
+    if (search !== null) {
       search.style.transition = `all ${args.s}s ${args.timing}`;
     }
   }
 
   settextalign(args) {
-    let search = null;
-    const search_1 = document.getElementById(`WitCatMarkDown${args.id}`);
-    if (search_1 instanceof HTMLDivElement) {
-      search = search_1;
+    const search = this._getEl(args.id);
+    if (search !== null) {
       if (String(args.type) === 'all') {
         search.firstChild.style.float = String(args.text);
       } else {
@@ -12652,11 +12610,7 @@ span.inline-color {
     if (this.canvas() === null || this.inputParent() === null) {
       return '';
     }
-    let search = null;
-    const search_1 = document.getElementById(`WitCatMarkDown${args.id}`);
-    if (search_1 instanceof HTMLDivElement) {
-      search = search_1;
-    }
+    const search = this._getEl(args.id);
     if (search !== null) {
       return this._getattrib(search, args.type);
     }
@@ -12672,7 +12626,7 @@ span.inline-color {
     if (this.inputParent() === null) {
       return;
     }
-    const search = document.getElementById(`WitCatMarkDown${args.id}`);
+    const search = this._getEl(args.id);
     if (search !== null) {
       this.inputParent().removeChild(search);
     }
@@ -12689,7 +12643,7 @@ span.inline-color {
     }
     const search = document.getElementsByClassName('WitCatMarkDown');
     for (const item of Array.from(search)) {
-      item.parentElement.remove();
+      if (item.parentElement) item.parentElement.remove();
     }
   }
 
@@ -12732,15 +12686,19 @@ span.inline-color {
         return element.scrollTop;
       case 'Horizontal':
         return element.scrollLeft;
-      case 'json':
-        // 直接把整个东西转成 JSON 对象，再拼接
+      case 'json': {
+        // 一次性读取样式，避免递归调用
+        const stageW = this.runtime.stageWidth;
+        const stageH = this.runtime.stageHeight;
+        const style = element.style;
         return JSON.stringify({
-          X: this._getattrib(element, 'x'),
-          Y: this._getattrib(element, 'y'),
-          width: this._getattrib(element, 'width'),
-          height: this._getattrib(element, 'height'),
-          content: this._getattrib(element, 'content'),
+          X: (parseFloat(style.left) / 100) * stageW,
+          Y: (parseFloat(style.top) / 100) * stageH,
+          width: (parseFloat(style.width) / 100) * stageW,
+          height: (parseFloat(style.height) / 100) * stageH,
+          content: element.innerText,
         });
+      }
       default:
         return '';
     }
