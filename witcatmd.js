@@ -10892,6 +10892,72 @@ let pressTimer = null;
 /** 长按判定阈值（毫秒） */
 const LONG_PRESS_DELAY = 500;
 /**
+ * 「当元素以[v]触发」积木支持监听的 DOM 事件。
+ * name 为真实事件名（用于 addEventListener 与 startHats 匹配），zh/en 为菜单显示文案。
+ * @type {Array<{name: string, zh: string, en: string}>}
+ */
+const WITCAT_DOM_EVENTS = [
+  { name: 'click', zh: '单击', en: 'click' },
+  { name: 'dblclick', zh: '双击', en: 'double click' },
+  { name: 'mousedown', zh: '鼠标按下', en: 'mouse down' },
+  { name: 'mouseup', zh: '鼠标松开', en: 'mouse up' },
+  { name: 'mousemove', zh: '鼠标移动', en: 'mouse move' },
+  { name: 'mouseenter', zh: '鼠标进入', en: 'mouse enter' },
+  { name: 'mouseleave', zh: '鼠标离开', en: 'mouse leave' },
+  { name: 'mouseover', zh: '鼠标移入(冒泡)', en: 'mouse over' },
+  { name: 'mouseout', zh: '鼠标移出(冒泡)', en: 'mouse out' },
+  { name: 'contextmenu', zh: '右键菜单', en: 'context menu' },
+  { name: 'wheel', zh: '滚轮', en: 'wheel' },
+  { name: 'auxclick', zh: '中键/侧键点击', en: 'auxiliary click' },
+  { name: 'drag', zh: '拖拽', en: 'drag' },
+  { name: 'drop', zh: '放下', en: 'drop' },
+  { name: 'pointerdown', zh: '指针按下', en: 'pointer down' },
+  { name: 'pointerup', zh: '指针松开', en: 'pointer up' },
+  { name: 'pointermove', zh: '指针移动', en: 'pointer move' },
+  { name: 'pointerover', zh: '指针移入(冒泡)', en: 'pointer over' },
+  { name: 'pointerout', zh: '指针移出(冒泡)', en: 'pointer out' },
+  { name: 'pointerenter', zh: '指针进入', en: 'pointer enter' },
+  { name: 'pointerleave', zh: '指针离开', en: 'pointer leave' },
+  { name: 'pointercancel', zh: '指针取消', en: 'pointer cancel' },
+  { name: 'touchstart', zh: '触摸开始', en: 'touch start' },
+  { name: 'touchmove', zh: '触摸移动', en: 'touch move' },
+  { name: 'touchend', zh: '触摸结束', en: 'touch end' },
+  { name: 'touchcancel', zh: '触摸取消', en: 'touch cancel' },
+  { name: 'keydown', zh: '按键按下', en: 'key down' },
+  { name: 'keyup', zh: '按键松开', en: 'key up' },
+  { name: 'keypress', zh: '按键(已不推荐)', en: 'key press' },
+  { name: 'input', zh: '输入', en: 'input' },
+  { name: 'focus', zh: '获得焦点', en: 'focus' },
+  { name: 'blur', zh: '失去焦点', en: 'blur' },
+  { name: 'change', zh: '内容改变', en: 'change' },
+  { name: 'submit', zh: '提交', en: 'submit' },
+  { name: 'reset', zh: '重置', en: 'reset' },
+  { name: 'select', zh: '选择', en: 'select' },
+  { name: 'invalid', zh: '校验失败', en: 'invalid' },
+  { name: 'load', zh: '加载完成', en: 'load' },
+  { name: 'DOMContentLoaded', zh: 'DOM加载完成', en: 'DOM content loaded' },
+  { name: 'resize', zh: '尺寸变化', en: 'resize' },
+  { name: 'scroll', zh: '滚动', en: 'scroll' },
+  { name: 'beforeunload', zh: '即将卸载', en: 'before unload' },
+  { name: 'unload', zh: '卸载', en: 'unload' },
+  { name: 'hashchange', zh: '哈希变化', en: 'hash change' },
+  { name: 'popstate', zh: '历史状态变化', en: 'pop state' },
+  { name: 'visibilitychange', zh: '可见性变化', en: 'visibility change' },
+  { name: 'copy', zh: '复制', en: 'copy' },
+  { name: 'cut', zh: '剪切', en: 'cut' },
+  { name: 'paste', zh: '粘贴', en: 'paste' },
+  { name: 'play', zh: '播放', en: 'play' },
+  { name: 'pause', zh: '暂停', en: 'pause' },
+  { name: 'ended', zh: '播放结束', en: 'ended' },
+  { name: 'animationstart', zh: '动画开始', en: 'animation start' },
+  { name: 'animationend', zh: '动画结束', en: 'animation end' },
+  { name: 'transitionstart', zh: '过渡开始', en: 'transition start' },
+  { name: 'transitionend', zh: '过渡结束', en: 'transition end' },
+  { name: 'error', zh: '错误', en: 'error' },
+  { name: 'online', zh: '联网', en: 'online' },
+  { name: 'offline', zh: '断网', en: 'offline' },
+];
+/**
  * 获取到的返回值
  */
 
@@ -10988,6 +11054,25 @@ class WitCatMarkDown {
     document.addEventListener('input', updateInput, true);
     document.addEventListener('keydown', updateKeydown, true);
     document.addEventListener('click', onTocClick, true);
+
+    // 通用 DOM 事件监听：命中 markdown 内元素或 window/document 级事件时触发「当元素以[v]触发」积木
+    const onMarkdownDomEvent = (e) => {
+      const target = e.target;
+      const isGlobal = target === window || target === document;
+      const inMarkdown = !!(target && typeof target.closest === 'function' &&
+        target.closest('.WitCatMarkDownOut'));
+      if (!isGlobal && !inMarkdown) {
+        return;
+      }
+      if (this.runtime && typeof this.runtime.startHats === 'function') {
+        this.runtime.startHats(`${witcat_markdown_extensionId}_whenelement`, { v: String(e.type) });
+      }
+    };
+    this._onMarkdownDomEvent = onMarkdownDomEvent;
+    this._domEventNames = WITCAT_DOM_EVENTS.map((ev) => ev.name);
+    for (const eventName of this._domEventNames) {
+      window.addEventListener(eventName, onMarkdownDomEvent, { capture: true, passive: true });
+    }
 
     if (!Scratch.extensions.unsandboxed) {
       throw new Error('WitCatMarkDown must be run unsandboxed');
@@ -11485,6 +11570,7 @@ class WitCatMarkDown {
         'WitCatMarkDown.dblclick': 'markdown[id]第[number]个[type]元素被双击?',
         'WitCatMarkDown.longpress': 'markdown[id]第[number]个[type]元素被长按?',
         'WitCatMarkDown.clicktext': '上次点击元素的文本',
+        'WitCatMarkDown.whenelement': '当元素以[v]触发',
         'WitCatMarkDown.oninput': 'markdown[id]输入框的最新内容',
         'WitCatMarkDown.onenter': 'markdown[id]输入框按下回车?',
         'WitCatMarkDown.theme': '设置 markdown ID[id]主题为[type]',
@@ -11594,6 +11680,7 @@ class WitCatMarkDown {
         'WitCatMarkDown.dblclick': 'markdown[id] [number] [type] element is double-clicked?',
         'WitCatMarkDown.longpress': 'markdown[id] [number] [type] element is long-pressed?',
         'WitCatMarkDown.clicktext': 'text of last clicked element',
+        'WitCatMarkDown.whenelement': 'when element is triggered by [v]',
         'WitCatMarkDown.oninput': 'latest input content of markdown[id]',
         'WitCatMarkDown.onenter': 'Enter pressed in markdown[id] input?',
         'WitCatMarkDown.theme': 'set theme of markdown ID[id] to [type]',
@@ -11614,6 +11701,11 @@ class WitCatMarkDown {
         'WitCatMarkDown.exporthtml': 'full HTML of markdown ID[id]',
       },
     };
+    // 注入「当元素以[v]触发」事件名称的本地化文案
+    for (const eventInfo of WITCAT_DOM_EVENTS) {
+      this._l10n['zh-cn'][`WitCatMarkDown.event.${eventInfo.name}`] = eventInfo.zh;
+      this._l10n.en[`WitCatMarkDown.event.${eventInfo.name}`] = eventInfo.en;
+    }
   }
 
   /**
@@ -12387,6 +12479,18 @@ class WitCatMarkDown {
         },
         `---交互`,
         {
+          opcode: 'whenelement',
+          blockType: 'hat',
+          text: this.formatMessage('WitCatMarkDown.whenelement'),
+          arguments: {
+            v: {
+              type: 'string',
+              menu: 'eventnames',
+              defaultValue: 'click',
+            },
+          },
+        },
+        {
           opcode: 'hover',
           blockType: 'Boolean',
           text: this.formatMessage('WitCatMarkDown.hover'),
@@ -12919,6 +13023,10 @@ class WitCatMarkDown {
             value: 'height',
           },
         ],
+        eventnames: WITCAT_DOM_EVENTS.map((eventInfo) => ({
+          text: this.formatMessage(`WitCatMarkDown.event.${eventInfo.name}`),
+          value: eventInfo.name,
+        })),
         theme: [
           {
             text: this.formatMessage('WitCatMarkDown.theme.1'),
@@ -14197,6 +14305,11 @@ class WitCatMarkDown {
     document.removeEventListener('input', this._onInput, true);
     document.removeEventListener('keydown', this._onKeydown, true);
     document.removeEventListener('click', this._onTocClick, true);
+    if (this._domEventNames) {
+      for (const eventName of this._domEventNames) {
+        window.removeEventListener(eventName, this._onMarkdownDomEvent, true);
+      }
+    }
     if (pressTimer !== null) {
       clearTimeout(pressTimer);
       pressTimer = null;
