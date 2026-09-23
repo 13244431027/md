@@ -10185,7 +10185,10 @@ var witcat_markdown_icon = 'data:image/svg+xml;charset=utf-8;base64,PHN2ZyB4bWxu
 var witcat_markdown_picture = 'data:image/svg+xml;charset=utf-8;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIiA/Pgo8IURPQ1RZUEUgc3ZnIFBVQkxJQyAiLS8vVzNDLy9EVEQgU1ZHIDEuMS8vRU4iICJodHRwOi8vd3d3LnczLm9yZy9HcmFwaGljcy9TVkcvMS4xL0RURC9zdmcxMS5kdGQiPgo8c3ZnIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIHZlcnNpb249IjEuMSIgd2lkdGg9IjYwMCIgaGVpZ2h0PSIzNzIiIHZpZXdCb3g9IjAgMCA2MDAgMzcyIiB4bWw6c3BhY2U9InByZXNlcnZlIj4KPGRlc2M+Q3JlYXRlZCB3aXRoIEZhYnJpYy5qcyAzLjYuNjwvZGVzYz4KPGRlZnM+CjwvZGVmcz4KPHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0icmdiYSgyNTUsIDI1NSwgMjU1LCAxKSI+PC9yZWN0Pgo8ZyB0cmFuc2Zvcm09Im1hdHJpeCgxNi4xMiAwIDAgMTYuMTIgMjk5Ljk4IDE4NS42OSkiICA+CjxwYXRoIHN0eWxlPSJzdHJva2U6IG5vbmU7IHN0cm9rZS13aWR0aDogMTsgc3Ryb2tlLWRhc2hhcnJheTogbm9uZTsgc3Ryb2tlLWxpbmVjYXA6IGJ1dHQ7IHN0cm9rZS1kYXNob2Zmc2V0OiAwOyBzdHJva2UtbGluZWpvaW46IG1pdGVyOyBzdHJva2UtbWl0ZXJsaW1pdDogNDsgZmlsbDogcmdiKDAsMCwwKTsgZmlsbC1ydWxlOiBub256ZXJvOyBvcGFjaXR5OiAxOyIgIHRyYW5zZm9ybT0iIHRyYW5zbGF0ZSgtOCwgLTgpIiBkPSJNIDE0Ljg1IDMgYyAwLjYzIDAgMS4xNSAwLjUyIDEuMTQgMS4xNSB2IDcuNyBjIDAgMC42MyAtMC41MSAxLjE1IC0xLjE1IDEuMTUgSCAxLjE1IEMgMC41MiAxMyAwIDEyLjQ4IDAgMTEuODQgViA0LjE1IEMgMCAzLjUyIDAuNTIgMyAxLjE1IDMgWiBNIDkgMTEgViA1IEggNyBMIDUuNSA3IEwgNCA1IEggMiB2IDYgaCAyIFYgOCBsIDEuNSAxLjkyIEwgNyA4IHYgMyBaIG0gMi45OSAwLjUgTCAxNC41IDggSCAxMyBWIDUgaCAtMiB2IDMgSCA5LjUgWiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiAvPgo8L2c+Cjwvc3ZnPg==';
 
   // ===================== markdown adapter =====================
-  var markdownToHtml = markdownItExports.default;
+
+  // getwidth 的 canvas 换算比例（经验值，用于把渲染像素换算回舞台坐标）
+  var CANVAS_WIDTH_RATIO = 0.748;
+  var CANVAS_HEIGHT_RATIO = 0.777;
 
   // ===================== 换行积木 (moreFieldsTextarea) =====================
 /**
@@ -10247,34 +10250,48 @@ var moreFieldsTextareaCustomFieldTypes = (function () {
     if (doText && textNode) _setCssNattr(textNode, 'fill', textColour ?? '#FFFFFF');
   }
 
-  const _cbfsb = runtime._convertBlockForScratchBlocks.bind(runtime);
-  runtime._convertBlockForScratchBlocks = function (blockInfo, categoryInfo, ...args) {
-    const res = _cbfsb(blockInfo, categoryInfo, ...args);
-    if (hasOwn(blockInfo, 'blockShape')) res.json.outputShape = blockInfo.blockShape;
-    return res;
-  };
+  if (typeof runtime._convertBlockForScratchBlocks === 'function') {
+    const _cbfsb = runtime._convertBlockForScratchBlocks.bind(runtime);
+    runtime._convertBlockForScratchBlocks = function (blockInfo, categoryInfo, ...args) {
+      const res = _cbfsb(blockInfo, categoryInfo, ...args);
+      if (hasOwn(blockInfo, 'blockShape')) res.json.outputShape = blockInfo.blockShape;
+      return res;
+    };
+  } else {
+    console.warn('WitCatMarkDown: runtime._convertBlockForScratchBlocks 不存在，blockShape 可能无法生效');
+  }
 
-  const bcfi = runtime._buildCustomFieldInfo.bind(runtime);
-  const bcftfsb = runtime._buildCustomFieldTypeForScratchBlocks.bind(runtime);
+  const bcfi =
+    typeof runtime._buildCustomFieldInfo === 'function'
+      ? runtime._buildCustomFieldInfo.bind(runtime)
+      : null;
+  const bcftfsb =
+    typeof runtime._buildCustomFieldTypeForScratchBlocks === 'function'
+      ? runtime._buildCustomFieldTypeForScratchBlocks.bind(runtime)
+      : null;
   let fi = null;
 
-  runtime._buildCustomFieldInfo = function (fieldName, fieldInfo, extensionId, categoryInfo, ...args) {
-    fi = fieldInfo;
-    return bcfi(fieldName, fieldInfo, extensionId, categoryInfo, ...args);
-  };
+  if (bcfi && bcftfsb) {
+    runtime._buildCustomFieldInfo = function (fieldName, fieldInfo, extensionId, categoryInfo, ...args) {
+      fi = fieldInfo;
+      return bcfi(fieldName, fieldInfo, extensionId, categoryInfo, ...args);
+    };
 
-  runtime._buildCustomFieldTypeForScratchBlocks = function (fieldName, output, outputShape, categoryInfo, ...args) {
-    let res = bcftfsb(fieldName, output, outputShape, categoryInfo, ...args);
-    if (fi) {
-      if (fi.color1) res.json.colour = fi.color1;
-      if (fi.color2) res.json.colourSecondary = fi.color2;
-      if (fi.color3) res.json.colourTertiary = fi.color3;
-      if (fi.color4) res.json.colourQuaternary = fi.color4;
-      if (hasOwn(fi, 'output')) res.json.output = fi.output;
-      fi = null;
-    }
-    return res;
-  };
+    runtime._buildCustomFieldTypeForScratchBlocks = function (fieldName, output, outputShape, categoryInfo, ...args) {
+      let res = bcftfsb(fieldName, output, outputShape, categoryInfo, ...args);
+      if (fi) {
+        if (fi.color1) res.json.colour = fi.color1;
+        if (fi.color2) res.json.colourSecondary = fi.color2;
+        if (fi.color3) res.json.colourTertiary = fi.color3;
+        if (fi.color4) res.json.colourQuaternary = fi.color4;
+        if (hasOwn(fi, 'output')) res.json.output = fi.output;
+        fi = null;
+      }
+      return res;
+    };
+  } else {
+    console.warn('WitCatMarkDown: 自定义字段相关运行时接口缺失，输入框颜色可能无法应用');
+  }
 
   const toRegisterOnBlocklyGot = [];
 
@@ -10313,39 +10330,43 @@ var moreFieldsTextareaCustomFieldTypes = (function () {
     Blockly = _sb;
     const BlockSvg = Blockly.BlockSvg;
 
-    const _setAttribute = SVGTextElement.prototype.setAttribute;
-    SVGTextElement.prototype.setAttribute = function (attr, val, ...args) {
-      if (
-        String(val) === 'NaN' &&
-        (attr === 'x' || attr === 'y') &&
-        this.getAttribute('class') === 'blocklyText'
-      ) {
-        const nattr = `MoreFieldsAttrErr${attr.toUpperCase()}`;
-        _setAttribute.call(
-          this,
-          nattr,
-          `尝试在此文本节点上进行非法设置。${attr.toUpperCase()}被设置为NaN。`
-        );
-        return _setAttribute.call(this, attr, '0', ...args);
-      }
-      return _setAttribute.call(this, attr, val, ...args);
-    };
-
-    const _endBlockDrag = Blockly.BlockDragger.prototype.endBlockDrag;
-    Blockly.BlockDragger.prototype.endBlockDrag = function (...a) {
-      const res = _endBlockDrag.apply(this, a);
-      for (const childBlock of this.draggingBlock_.childBlocks_) {
-        const inputList = childBlock.inputList;
+    if (typeof SVGTextElement !== 'undefined' && SVGTextElement.prototype) {
+      const _setAttribute = SVGTextElement.prototype.setAttribute;
+      SVGTextElement.prototype.setAttribute = function (attr, val, ...args) {
         if (
-          inputList.length === 1 &&
-          inputList[0].fieldRow.length === 1 &&
-          !!inputList[0].fieldRow[0]?.inlineDblRender
+          String(val) === 'NaN' &&
+          (attr === 'x' || attr === 'y') &&
+          this.getAttribute('class') === 'blocklyText'
         ) {
-          childBlock.render();
+          const nattr = `MoreFieldsAttrErr${attr.toUpperCase()}`;
+          _setAttribute.call(
+            this,
+            nattr,
+            `尝试在此文本节点上进行非法设置。${attr.toUpperCase()}被设置为NaN。`
+          );
+          return _setAttribute.call(this, attr, '0', ...args);
         }
-      }
-      return res;
-    };
+        return _setAttribute.call(this, attr, val, ...args);
+      };
+    }
+
+    if (Blockly.BlockDragger && Blockly.BlockDragger.prototype) {
+      const _endBlockDrag = Blockly.BlockDragger.prototype.endBlockDrag;
+      Blockly.BlockDragger.prototype.endBlockDrag = function (...a) {
+        const res = _endBlockDrag.apply(this, a);
+        for (const childBlock of this.draggingBlock_.childBlocks_) {
+          const inputList = childBlock.inputList;
+          if (
+            inputList.length === 1 &&
+            inputList[0].fieldRow.length === 1 &&
+            !!inputList[0].fieldRow[0]?.inlineDblRender
+          ) {
+            childBlock.render();
+          }
+        }
+        return res;
+      };
+    }
 
     // =========================================================
     // 1) 弹出式 —— 注释式浮层（无确定按钮，点空白即关闭）
@@ -10681,8 +10702,17 @@ var moreFieldsTextareaCustomFieldTypes = (function () {
         }
       }
 
-      dispose() {
-        super.dispose();
+      dispose(...args) {
+        if (this._resizeObserver) {
+          this._resizeObserver.disconnect();
+          this._resizeObserver = null;
+        }
+        if (this._resizeRaf && typeof cancelAnimationFrame === 'function') {
+          cancelAnimationFrame(this._resizeRaf);
+        }
+        this._resizeRaf = 0;
+        this._resizeQueued = false;
+        super.dispose(...args);
       }
 
       init(...initArgs) {
@@ -10775,19 +10805,32 @@ var moreFieldsTextareaCustomFieldTypes = (function () {
             textarea.style.resize = 'none';
           }
 
-          new ResizeObserver(() => this._resizeHolder()).observe(this._textarea);
+          this._resizeObserver = new ResizeObserver(() => this._resizeHolder());
+          this._resizeObserver.observe(this._textarea);
         }
 
         this._resizeHolder();
       }
 
       _resizeHolder() {
-        this.updateWidth();
-
-        const ov = this.getValue();
-        this.setValue(ov + '~');
-        this.setValue(ov);
-        this.render_();
+        // ResizeObserver 会在尺寸变化时再次触发本方法，形成递归；
+        // 用 rAF 合并调度，避免无限循环与每帧多次重排
+        if (this._resizeQueued) return;
+        this._resizeQueued = true;
+        const run = () => {
+          this._resizeQueued = false;
+          this._resizeRaf = 0;
+          this.updateWidth();
+          const ov = this.getValue();
+          this.setValue(ov + '~');
+          this.setValue(ov);
+          this.render_();
+        };
+        if (typeof requestAnimationFrame === 'function') {
+          this._resizeRaf = requestAnimationFrame(run);
+        } else {
+          run();
+        }
       }
 
       _onInput() {
@@ -10807,22 +10850,25 @@ var moreFieldsTextareaCustomFieldTypes = (function () {
 
     Blockly.Events.disable();
 
-    if (workspace) {
-      if (vm.editingTarget) vm.emitWorkspaceUpdate();
+    try {
+      if (workspace) {
+        if (vm.editingTarget) vm.emitWorkspaceUpdate();
 
-      const flyout = workspace.getFlyout();
-      if (flyout) {
-        const flyoutWorkspace = flyout.getWorkspace();
-        Blockly.Xml.clearWorkspaceAndLoadFromXml(
-          Blockly.Xml.workspaceToDom(flyoutWorkspace),
-          flyoutWorkspace
-        );
-        workspace.getToolbox().refreshSelection();
-        workspace.toolboxRefreshEnabled_ = true;
+        const flyout = workspace.getFlyout();
+        if (flyout) {
+          const flyoutWorkspace = flyout.getWorkspace();
+          Blockly.Xml.clearWorkspaceAndLoadFromXml(
+            Blockly.Xml.workspaceToDom(flyoutWorkspace),
+            flyoutWorkspace
+          );
+          workspace.getToolbox().refreshSelection();
+          workspace.toolboxRefreshEnabled_ = true;
+        }
       }
+    } finally {
+      // 保证事件系统一定恢复，避免异常时工作区彻底失去事件
+      if (eventsOriginallyEnabled) Blockly.Events.enable();
     }
-
-    if (eventsOriginallyEnabled) Blockly.Events.enable();
   }
 
   if (typeof Scratch?.gui === 'object') {
@@ -10837,6 +10883,80 @@ var moreFieldsTextareaCustomFieldTypes = (function () {
 const witcat_markdown_extensionId = 'WitCatMarkDowns';
 let markdownmousedown = {};
 let touchEvent = {};
+let hoverEvent = {};
+let dblclickEvent = {};
+let longpressEvent = {};
+let inputEvent = {};
+let enterEvent = {};
+let pressTimer = null;
+/** 长按判定阈值（毫秒） */
+const LONG_PRESS_DELAY = 500;
+/**
+ * 「当元素以[v]触发」积木支持监听的 DOM 事件。
+ * name 为真实事件名（用于 addEventListener 与 startHats 匹配），zh/en 为菜单显示文案。
+ * @type {Array<{name: string, zh: string, en: string}>}
+ */
+const WITCAT_DOM_EVENTS = [
+  { name: 'click', zh: '单击', en: 'click' },
+  { name: 'dblclick', zh: '双击', en: 'double click' },
+  { name: 'mousedown', zh: '鼠标按下', en: 'mouse down' },
+  { name: 'mouseup', zh: '鼠标松开', en: 'mouse up' },
+  { name: 'mousemove', zh: '鼠标移动', en: 'mouse move' },
+  { name: 'mouseenter', zh: '鼠标进入', en: 'mouse enter' },
+  { name: 'mouseleave', zh: '鼠标离开', en: 'mouse leave' },
+  { name: 'mouseover', zh: '鼠标移入(冒泡)', en: 'mouse over' },
+  { name: 'mouseout', zh: '鼠标移出(冒泡)', en: 'mouse out' },
+  { name: 'contextmenu', zh: '右键菜单', en: 'context menu' },
+  { name: 'wheel', zh: '滚轮', en: 'wheel' },
+  { name: 'auxclick', zh: '中键/侧键点击', en: 'auxiliary click' },
+  { name: 'drag', zh: '拖拽', en: 'drag' },
+  { name: 'drop', zh: '放下', en: 'drop' },
+  { name: 'pointerdown', zh: '指针按下', en: 'pointer down' },
+  { name: 'pointerup', zh: '指针松开', en: 'pointer up' },
+  { name: 'pointermove', zh: '指针移动', en: 'pointer move' },
+  { name: 'pointerover', zh: '指针移入(冒泡)', en: 'pointer over' },
+  { name: 'pointerout', zh: '指针移出(冒泡)', en: 'pointer out' },
+  { name: 'pointerenter', zh: '指针进入', en: 'pointer enter' },
+  { name: 'pointerleave', zh: '指针离开', en: 'pointer leave' },
+  { name: 'pointercancel', zh: '指针取消', en: 'pointer cancel' },
+  { name: 'touchstart', zh: '触摸开始', en: 'touch start' },
+  { name: 'touchmove', zh: '触摸移动', en: 'touch move' },
+  { name: 'touchend', zh: '触摸结束', en: 'touch end' },
+  { name: 'touchcancel', zh: '触摸取消', en: 'touch cancel' },
+  { name: 'keydown', zh: '按键按下', en: 'key down' },
+  { name: 'keyup', zh: '按键松开', en: 'key up' },
+  { name: 'keypress', zh: '按键(已不推荐)', en: 'key press' },
+  { name: 'input', zh: '输入', en: 'input' },
+  { name: 'focus', zh: '获得焦点', en: 'focus' },
+  { name: 'blur', zh: '失去焦点', en: 'blur' },
+  { name: 'change', zh: '内容改变', en: 'change' },
+  { name: 'submit', zh: '提交', en: 'submit' },
+  { name: 'reset', zh: '重置', en: 'reset' },
+  { name: 'select', zh: '选择', en: 'select' },
+  { name: 'invalid', zh: '校验失败', en: 'invalid' },
+  { name: 'load', zh: '加载完成', en: 'load' },
+  { name: 'DOMContentLoaded', zh: 'DOM加载完成', en: 'DOM content loaded' },
+  { name: 'resize', zh: '尺寸变化', en: 'resize' },
+  { name: 'scroll', zh: '滚动', en: 'scroll' },
+  { name: 'beforeunload', zh: '即将卸载', en: 'before unload' },
+  { name: 'unload', zh: '卸载', en: 'unload' },
+  { name: 'hashchange', zh: '哈希变化', en: 'hash change' },
+  { name: 'popstate', zh: '历史状态变化', en: 'pop state' },
+  { name: 'visibilitychange', zh: '可见性变化', en: 'visibility change' },
+  { name: 'copy', zh: '复制', en: 'copy' },
+  { name: 'cut', zh: '剪切', en: 'cut' },
+  { name: 'paste', zh: '粘贴', en: 'paste' },
+  { name: 'play', zh: '播放', en: 'play' },
+  { name: 'pause', zh: '暂停', en: 'pause' },
+  { name: 'ended', zh: '播放结束', en: 'ended' },
+  { name: 'animationstart', zh: '动画开始', en: 'animation start' },
+  { name: 'animationend', zh: '动画结束', en: 'animation end' },
+  { name: 'transitionstart', zh: '过渡开始', en: 'transition start' },
+  { name: 'transitionend', zh: '过渡结束', en: 'transition end' },
+  { name: 'error', zh: '错误', en: 'error' },
+  { name: 'online', zh: '联网', en: 'online' },
+  { name: 'offline', zh: '断网', en: 'offline' },
+];
 /**
  * 获取到的返回值
  */
@@ -10845,13 +10965,114 @@ let touchEvent = {};
 
 class WitCatMarkDown {
   constructor(runtime) {
-    window.addEventListener('mousedown', (e) => {
-      markdownmousedown = e;
-    });
+    // 只保留 target，避免长期持有整个事件对象阻碍其关联 DOM 回收
+    const updateMouseDown = (e) => {
+      markdownmousedown = { target: e.target };
+    };
+    const updateTouch = (e) => {
+      const point = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]);
+      touchEvent = { target: (point && point.target) || e.target };
+    };
+    const updateMouseMove = (e) => {
+      touchEvent = { target: e.target };
+      hoverEvent = { target: e.target };
+    };
+    const updateDblclick = (e) => {
+      dblclickEvent = { target: e.target };
+    };
+    const startLongPress = (e) => {
+      const target = e.target;
+      if (pressTimer !== null) {
+        clearTimeout(pressTimer);
+      }
+      pressTimer = setTimeout(() => {
+        pressTimer = null;
+        longpressEvent = { target };
+      }, LONG_PRESS_DELAY);
+    };
+    const endLongPress = () => {
+      if (pressTimer !== null) {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+      }
+    };
+    const updateInput = (e) => {
+      const target = e.target;
+      if (target && target.closest && target.closest('.WitCatMarkDownOut')) {
+        inputEvent = { target };
+      }
+    };
+    const updateKeydown = (e) => {
+      if (String(e.key) !== 'Enter') {
+        return;
+      }
+      const target = e.target;
+      if (target && target.closest && target.closest('.WitCatMarkDownOut')) {
+        enterEvent = { target };
+      }
+    };
+    const onTocClick = (e) => {
+      const target = e.target;
+      const item = target && target.closest ? target.closest('.WitCatMarkDown-toc-item') : null;
+      if (!item) {
+        return;
+      }
+      e.preventDefault();
+      const index = item.getAttribute('data-target');
+      const container = item.closest('.WitCatMarkDownOut');
+      if (!container) {
+        return;
+      }
+      const anchor = container.querySelector(`[data-witcat-anchor="${index}"]`);
+      if (anchor) {
+        anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    };
 
-    window.addEventListener('mousemove', (e) => {
-      touchEvent = e;
-    });
+    // 保存引用，供 _dispose 移除，避免扩展重载时监听器泄漏
+    this._onMouseDown = updateMouseDown;
+    this._onMouseMove = updateMouseMove;
+    this._onTouchStart = updateTouch;
+    this._onTouchMove = updateTouch;
+    this._onDblclick = updateDblclick;
+    this._onLongPressStart = startLongPress;
+    this._onLongPressEnd = endLongPress;
+    this._onInput = updateInput;
+    this._onKeydown = updateKeydown;
+    this._onTocClick = onTocClick;
+
+    window.addEventListener('mousedown', updateMouseDown);
+    window.addEventListener('mousemove', updateMouseMove);
+    window.addEventListener('touchstart', updateTouch, { passive: true });
+    window.addEventListener('touchmove', updateTouch, { passive: true });
+    window.addEventListener('dblclick', updateDblclick, true);
+    window.addEventListener('mousedown', startLongPress);
+    window.addEventListener('mouseup', endLongPress);
+    window.addEventListener('touchstart', startLongPress, { passive: true });
+    window.addEventListener('touchend', endLongPress);
+    window.addEventListener('touchcancel', endLongPress);
+    document.addEventListener('input', updateInput, true);
+    document.addEventListener('keydown', updateKeydown, true);
+    document.addEventListener('click', onTocClick, true);
+
+    // 通用 DOM 事件监听：命中 markdown 内元素或 window/document 级事件时触发「当元素以[v]触发」积木
+    const onMarkdownDomEvent = (e) => {
+      const target = e.target;
+      const isGlobal = target === window || target === document;
+      const inMarkdown = !!(target && typeof target.closest === 'function' &&
+        target.closest('.WitCatMarkDownOut'));
+      if (!isGlobal && !inMarkdown) {
+        return;
+      }
+      if (this.runtime && typeof this.runtime.startHats === 'function') {
+        this.runtime.startHats(`${witcat_markdown_extensionId}_whenelement`, { v: String(e.type) });
+      }
+    };
+    this._onMarkdownDomEvent = onMarkdownDomEvent;
+    this._domEventNames = WITCAT_DOM_EVENTS.map((ev) => ev.name);
+    for (const eventName of this._domEventNames) {
+      window.addEventListener(eventName, onMarkdownDomEvent, { capture: true, passive: true });
+    }
 
     if (!Scratch.extensions.unsandboxed) {
       throw new Error('WitCatMarkDown must be run unsandboxed');
@@ -10861,6 +11082,38 @@ class WitCatMarkDown {
     this._lang = String(_locale).toLowerCase().indexOf('zh') === 0 ? 'zh-cn' : 'en';
 
     this.resize = null;
+    /**
+     * 本实例创建的样式元素，_dispose 时移除
+     * @type {HTMLStyleElement | null}
+     */
+    this._styleEl = null;
+    /**
+     * 沙盒模式开关。开启后原始 HTML 会被转义为文本；关闭时保留 HTML。
+     */
+    this.sandboxMode = false;
+    /**
+     * 数学公式开关。关闭后 $...$ / $$...$$ 会按普通文本渲染。
+     */
+    this.mathMode = true;
+    /**
+     * 最近一次错误信息，供 lasterror 报告器读取
+     * @type {string}
+     */
+    this._lastError = '';
+    /**
+     * 渲染器缓存，按“是否允许 HTML + 是否启用公式”组合复用实例
+     * @type {Object<string, object>}
+     */
+    this._renderers = {};
+    /**
+     * 本实例创建的自定义 CSS 样式元素，_dispose 时移除
+     * @type {HTMLStyleElement | null}
+     */
+    this._customCssEl = null;
+    /**
+     * 已弹窗提示过的 “markdownId|html标签” 组合，避免重复弹窗
+     */
+    this._htmlWarned = new Set();
     /**
      * Scratch 所使用的 canvas，获取不到返回 null
      * @return {HTMLcanvasElement | null}
@@ -11180,8 +11433,50 @@ class WitCatMarkDown {
     height: 120%;
     width: 120%
 }
+
+.WitCatMarkDownOut.WitCatMarkDown-dark {
+    background: #1e1e1e;
+    color: #ddd;
+    border-radius: 6px;
+}
+.WitCatMarkDownOut.WitCatMarkDown-dark .WitCatMarkDown {
+    color: #ddd;
+}
+.WitCatMarkDownOut.WitCatMarkDown-dark a {
+    color: #6cb6ff;
+}
+.WitCatMarkDownOut.WitCatMarkDown-dark pre,
+.WitCatMarkDownOut.WitCatMarkDown-dark code {
+    background: #2d2d2d;
+    color: #eee;
+}
+.WitCatMarkDownOut.WitCatMarkDown-dark blockquote {
+    color: #aaa;
+    border-left-color: #555;
+}
+.WitCatMarkDownOut.WitCatMarkDown-dark table th,
+.WitCatMarkDownOut.WitCatMarkDown-dark table td {
+    border-color: #555;
+}
+.WitCatMarkDownOut.WitCatMarkDown-dark hr {
+    border-color: #555;
+}
+
+.WitCatMarkDown-toc {
+    list-style: none;
+    padding-left: 0;
+    margin: 0 0 .5em 0;
+    border-bottom: 1px solid rgba(128, 128, 128, .35);
+}
+.WitCatMarkDown-toc-item {
+    cursor: pointer;
+}
+.WitCatMarkDown-toc-item:hover {
+    text-decoration: underline;
+}
       `;
     document.body.appendChild(ScrollStyle);
+    this._styleEl = ScrollStyle;
     }
 
     this._l10n = {
@@ -11204,6 +11499,10 @@ class WitCatMarkDown {
         'WitCatBBcodes.code': '设置 markdown ID[id]第[num]个代码框的高亮为[name]',
         'WitCatMarkDown.ide': '设置 markdown ID[id]为[name]',
         'WitCatMarkDown.size': 'markdown大小自适应[type]',
+        'WitCatMarkDown.sandbox': '设置沙盒模式[type]',
+        'WitCatMarkDown.getsandbox': '沙盒模式',
+        'WitCatMarkDown.sandbox.1': '开启',
+        'WitCatMarkDown.sandbox.2': '关闭',
         'WitCatMarkDown.type.1': 'X',
         'WitCatMarkDown.type.2': 'Y',
         'WitCatMarkDown.type.3': '宽',
@@ -11250,6 +11549,46 @@ class WitCatMarkDown {
         "WitCatMarkDown.setstyle.6": "超大号",
         "WitCatMarkDown.setstyle.7": "链接",
         "WitCatMarkDown.setstyle.8": "代码框",
+        'WitCatMarkDown.setopacity': '设置 markdown ID[id]第[num]个[type]的透明度为[text]',
+        'WitCatMarkDown.showhide': 'markdown ID[id][type]',
+        'WitCatMarkDown.setz': '设置 markdown ID[id]第[num]个[type]的层级为[text]',
+        'WitCatMarkDown.scrollto': 'markdown ID[id]滚动到第[num]个[type]',
+        'WitCatMarkDown.getelement': 'markdown ID[id]第[num]个[type]的[attr]',
+        'WitCatMarkDown.setelement': '设置 markdown ID[id]第[num]个[type]的内容为[text]',
+        'WitCatMarkDown.getcount': 'markdown ID[id]中[type]的数量',
+        'WitCatMarkDown.showhide.1': '显示',
+        'WitCatMarkDown.showhide.2': '隐藏',
+        'WitCatMarkDown.scrollbehavior.1': '平滑',
+        'WitCatMarkDown.scrollbehavior.2': '瞬间',
+        'WitCatMarkDown.getattr.1': '文本',
+        'WitCatMarkDown.getattr.2': 'HTML',
+        'WitCatMarkDown.getattr.3': '颜色',
+        'WitCatMarkDown.getattr.4': '字号',
+        'WitCatMarkDown.getattr.5': '宽度',
+        'WitCatMarkDown.getattr.6': '高度',
+        'WitCatMarkDown.hover': 'markdown[id]第[number]个[type]元素被鼠标悬停?',
+        'WitCatMarkDown.dblclick': 'markdown[id]第[number]个[type]元素被双击?',
+        'WitCatMarkDown.longpress': 'markdown[id]第[number]个[type]元素被长按?',
+        'WitCatMarkDown.clicktext': '上次点击元素的文本',
+        'WitCatMarkDown.whenelement': '当元素以[v]触发',
+        'WitCatMarkDown.oninput': 'markdown[id]输入框的最新内容',
+        'WitCatMarkDown.onenter': 'markdown[id]输入框按下回车?',
+        'WitCatMarkDown.theme': '设置 markdown ID[id]主题为[type]',
+        'WitCatMarkDown.theme.1': '亮色',
+        'WitCatMarkDown.theme.2': '暗色',
+        'WitCatMarkDown.setbg': '设置 markdown ID[id]的[bg]为[text]',
+        'WitCatMarkDown.setbg.1': '背景色',
+        'WitCatMarkDown.setbg.2': '背景图',
+        'WitCatMarkDown.setcss': '设置自定义CSS为[text]',
+        'WitCatMarkDown.setfontsize': '设置 markdown ID[id]第[num]个[type]的字号为[text]',
+        'WitCatMarkDown.setlineheight': '设置 markdown ID[id]第[num]个[type]的行高为[text]',
+        'WitCatMarkDown.setelementcss': '设置 markdown ID[id]第[num]个[type]的CSS为[text]',
+        'WitCatMarkDown.mathon': 'markdown数学公式[type]',
+        'WitCatMarkDown.getmath': '数学公式',
+        'WitCatMarkDown.inserttoc': '为 markdown ID[id] 插入目录(至[level]级标题)',
+        'WitCatMarkDown.isrendered': 'markdown ID[id]渲染完成?',
+        'WitCatMarkDown.lasterror': '上一条错误',
+        'WitCatMarkDown.exporthtml': 'markdown ID[id]的完整HTML',
       },
       en: {
         'WitCatMarkDown.name': 'WitCat’s markdown',
@@ -11270,6 +11609,10 @@ class WitCatMarkDown {
         'WitCatBBcodes.code': 'Set the [num] code box highlighted by markdown ID[id] to [name]',
         'WitCatMarkDown.ide': 'Set markdown ID[id] to [name]',
         'WitCatMarkDown.size': 'markdown size adaptive[type]',
+        'WitCatMarkDown.sandbox': 'Set sandbox mode [type]',
+        'WitCatMarkDown.getsandbox': 'sandbox mode',
+        'WitCatMarkDown.sandbox.1': 'on',
+        'WitCatMarkDown.sandbox.2': 'off',
         'WitCatMarkDown.type.1': 'X',
         'WitCatMarkDown.type.2': 'Y',
         'WitCatMarkDown.type.3': 'width',
@@ -11316,8 +11659,53 @@ class WitCatMarkDown {
         "WitCatMarkDown.setstyle.6": "supersize",
         "WitCatMarkDown.setstyle.7": "link",
         "WitCatMarkDown.setstyle.8": "Code box",
+        'WitCatMarkDown.setopacity': 'set opacity of markdown ID[id] [num] [type] to [text]',
+        'WitCatMarkDown.showhide': 'markdown ID[id] [type]',
+        'WitCatMarkDown.setz': 'set z-index of markdown ID[id] [num] [type] to [text]',
+        'WitCatMarkDown.scrollto': 'scroll markdown ID[id] to [num] [type]',
+        'WitCatMarkDown.getelement': '[attr] of markdown ID[id] [num] [type]',
+        'WitCatMarkDown.setelement': 'set content of markdown ID[id] [num] [type] to [text]',
+        'WitCatMarkDown.getcount': 'number of [type] in markdown ID[id]',
+        'WitCatMarkDown.showhide.1': 'show',
+        'WitCatMarkDown.showhide.2': 'hide',
+        'WitCatMarkDown.scrollbehavior.1': 'smooth',
+        'WitCatMarkDown.scrollbehavior.2': 'instant',
+        'WitCatMarkDown.getattr.1': 'text',
+        'WitCatMarkDown.getattr.2': 'HTML',
+        'WitCatMarkDown.getattr.3': 'color',
+        'WitCatMarkDown.getattr.4': 'font size',
+        'WitCatMarkDown.getattr.5': 'width',
+        'WitCatMarkDown.getattr.6': 'height',
+        'WitCatMarkDown.hover': 'markdown[id] [number] [type] element is hovered?',
+        'WitCatMarkDown.dblclick': 'markdown[id] [number] [type] element is double-clicked?',
+        'WitCatMarkDown.longpress': 'markdown[id] [number] [type] element is long-pressed?',
+        'WitCatMarkDown.clicktext': 'text of last clicked element',
+        'WitCatMarkDown.whenelement': 'when element is triggered by [v]',
+        'WitCatMarkDown.oninput': 'latest input content of markdown[id]',
+        'WitCatMarkDown.onenter': 'Enter pressed in markdown[id] input?',
+        'WitCatMarkDown.theme': 'set theme of markdown ID[id] to [type]',
+        'WitCatMarkDown.theme.1': 'light',
+        'WitCatMarkDown.theme.2': 'dark',
+        'WitCatMarkDown.setbg': 'set [bg] of markdown ID[id] to [text]',
+        'WitCatMarkDown.setbg.1': 'background color',
+        'WitCatMarkDown.setbg.2': 'background image',
+        'WitCatMarkDown.setcss': 'set custom CSS to [text]',
+        'WitCatMarkDown.setfontsize': 'set font size of markdown ID[id] [num] [type] to [text]',
+        'WitCatMarkDown.setlineheight': 'set line height of markdown ID[id] [num] [type] to [text]',
+        'WitCatMarkDown.setelementcss': 'set CSS of markdown ID[id] [num] [type] to [text]',
+        'WitCatMarkDown.mathon': 'markdown math formula [type]',
+        'WitCatMarkDown.getmath': 'math formula',
+        'WitCatMarkDown.inserttoc': 'insert table of contents (up to level [level]) into markdown ID[id]',
+        'WitCatMarkDown.isrendered': 'markdown ID[id] rendered?',
+        'WitCatMarkDown.lasterror': 'last error',
+        'WitCatMarkDown.exporthtml': 'full HTML of markdown ID[id]',
       },
     };
+    // 注入「当元素以[v]触发」事件名称的本地化文案
+    for (const eventInfo of WITCAT_DOM_EVENTS) {
+      this._l10n['zh-cn'][`WitCatMarkDown.event.${eventInfo.name}`] = eventInfo.zh;
+      this._l10n.en[`WitCatMarkDown.event.${eventInfo.name}`] = eventInfo.en;
+    }
   }
 
   /**
@@ -11328,6 +11716,112 @@ class WitCatMarkDown {
   formatMessage(id) {
     const table = this._l10n[this._lang];
     return (table && table[id]) || id;
+  }
+
+  /**
+   * 从 markdown 源码中提取原始 HTML 标签名（排除围栏/行内代码，减少误报）
+   * @param {string} text
+   * @return {string[]}
+   */
+  _detectHtmlTags(text) {
+    if (typeof text !== 'string' || text.indexOf('<') === -1) {
+      return [];
+    }
+    const cleaned = text
+      .replace(/```[\s\S]*?```/g, '')
+      .replace(/~~~[\s\S]*?~~~/g, '')
+      .replace(/`[^`\n]*`/g, '');
+    const re = /<\s*\/?\s*([a-zA-Z][a-zA-Z0-9-]*)\b[^>]*?>/g;
+    const tags = new Set();
+    let m;
+    while ((m = re.exec(cleaned)) !== null) {
+      const name = m[1].toLowerCase();
+      // 跳过自动链接 <https://...> / <http://...>
+      if (name === 'http' || name === 'https') continue;
+      tags.add(name);
+    }
+    return Array.from(tags);
+  }
+
+  /**
+   * 未开启沙盒且内容包含 HTML 时弹窗提示
+   * @param {string[]} tags
+   */
+  _warnHtml(tags) {
+    const message = `此markdown中有html为${tags.join(',')}注意安全`;
+    try {
+      if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+        window.alert(message);
+      } else if (typeof alert === 'function') {
+        alert(message);
+      }
+    } catch (error) {
+      console.warn('WitCatMarkDown', message, error);
+    }
+  }
+
+  /**
+   * 按当前沙盒/公式开关获取渲染器，实例级缓存
+   * @param {boolean} html 是否允许原始 HTML
+   * @param {boolean} math 是否启用数学公式
+   * @return {object}
+   */
+  _getRenderer(html, math) {
+    const key = `${html ? 1 : 0}${math ? 1 : 0}`;
+    let renderer = this._renderers[key];
+    if (!renderer) {
+      renderer = markdownItExports.createMarkdownIt();
+      renderer.set({ html });
+      if (!math) {
+        renderer.inline.ruler.disable('math_inline', true);
+        renderer.block.ruler.disable('math_block', true);
+      }
+      this._renderers[key] = renderer;
+    }
+    return renderer;
+  }
+
+  /**
+   * 统一的 markdown 渲染入口，按沙盒模式与公式开关选择渲染器
+   * @param {string} text markdown 源码
+   * @param {string} id markdown ID
+   * @return {string} HTML 字符串
+   */
+  _renderHtml(text, id) {
+    const src = String(text);
+    const tags = this._detectHtmlTags(src);
+    if (tags.length > 0 && !this.sandboxMode) {
+      const key = `${id}|${tags.join(',')}`;
+      if (!this._htmlWarned.has(key)) {
+        this._htmlWarned.add(key);
+        this._warnHtml(tags);
+      }
+    }
+    const env = { docId: String(id) };
+    return this._getRenderer(!this.sandboxMode, this.mathMode).render(src, env);
+  }
+
+  /**
+   * 仅高亮尚未处理过的代码块，避免每次渲染都全量重复高亮
+   * @param {Element} root
+   * @param {boolean} [force] 是否强制重新高亮（切换高亮语言时使用）
+   */
+  _highlightCode(root, force) {
+    if (!root) {
+      return;
+    }
+    const selector =
+      'code[class*="language-"], [class*="language-"] code, code[class*="lang-"], [class*="lang-"] code';
+    const codes = Array.from(root.querySelectorAll(selector));
+    for (const code of codes) {
+      if (!force && code.dataset && code.dataset.witcatHighlighted === '1') {
+        continue;
+      }
+      Prism.highlightElement(code);
+      if (code.dataset) {
+        code.dataset.witcatHighlighted = '1';
+      }
+    }
   }
 
   static get customFieldTypes() {
@@ -11493,6 +11987,23 @@ class WitCatMarkDown {
               menu: 'typess',
             },
           },
+        },
+        {
+          opcode: 'sandbox',
+          blockType: 'command',
+          text: this.formatMessage('WitCatMarkDown.sandbox'),
+          arguments: {
+            type: {
+              type: 'string',
+              menu: 'sandbox',
+            },
+          },
+        },
+        {
+          opcode: 'getsandbox',
+          blockType: 'reporter',
+          text: this.formatMessage('WitCatMarkDown.getsandbox'),
+          arguments: {},
         },
         {
           opcode: 'setfont',
@@ -11820,6 +12331,426 @@ class WitCatMarkDown {
             },
           },
         },
+        `---外观与定位`,
+        {
+          opcode: 'setopacity',
+          blockType: 'command',
+          text: this.formatMessage('WitCatMarkDown.setopacity'),
+          arguments: {
+            id: {
+              type: 'string',
+              defaultValue: 'i',
+            },
+            num: {
+              type: 'number',
+              defaultValue: '1',
+            },
+            type: {
+              type: 'string',
+              defaultValue: 'p',
+            },
+            text: {
+              type: 'number',
+              defaultValue: '100',
+            },
+          },
+        },
+        {
+          opcode: 'showhide',
+          blockType: 'command',
+          text: this.formatMessage('WitCatMarkDown.showhide'),
+          arguments: {
+            id: {
+              type: 'string',
+              defaultValue: 'i',
+            },
+            type: {
+              type: 'string',
+              menu: 'showhide',
+            },
+          },
+        },
+        {
+          opcode: 'setz',
+          blockType: 'command',
+          text: this.formatMessage('WitCatMarkDown.setz'),
+          arguments: {
+            id: {
+              type: 'string',
+              defaultValue: 'i',
+            },
+            num: {
+              type: 'number',
+              defaultValue: '1',
+            },
+            type: {
+              type: 'string',
+              defaultValue: 'p',
+            },
+            text: {
+              type: 'number',
+              defaultValue: '1',
+            },
+          },
+        },
+        {
+          opcode: 'scrollto',
+          blockType: 'command',
+          text: this.formatMessage('WitCatMarkDown.scrollto'),
+          arguments: {
+            id: {
+              type: 'string',
+              defaultValue: 'i',
+            },
+            num: {
+              type: 'number',
+              defaultValue: '1',
+            },
+            type: {
+              type: 'string',
+              defaultValue: 'h1',
+            },
+            behavior: {
+              type: 'string',
+              menu: 'scrollbehavior',
+            },
+          },
+        },
+        {
+          opcode: 'getelement',
+          blockType: 'reporter',
+          text: this.formatMessage('WitCatMarkDown.getelement'),
+          arguments: {
+            id: {
+              type: 'string',
+              defaultValue: 'i',
+            },
+            num: {
+              type: 'number',
+              defaultValue: '1',
+            },
+            type: {
+              type: 'string',
+              defaultValue: 'p',
+            },
+            attr: {
+              type: 'string',
+              menu: 'getattr',
+            },
+          },
+        },
+        {
+          opcode: 'setelement',
+          blockType: 'command',
+          text: this.formatMessage('WitCatMarkDown.setelement'),
+          arguments: {
+            id: {
+              type: 'string',
+              defaultValue: 'i',
+            },
+            num: {
+              type: 'number',
+              defaultValue: '1',
+            },
+            type: {
+              type: 'string',
+              defaultValue: 'p',
+            },
+            text: {
+              type: 'string',
+              defaultValue: 'text',
+            },
+          },
+        },
+        {
+          opcode: 'getcount',
+          blockType: 'reporter',
+          text: this.formatMessage('WitCatMarkDown.getcount'),
+          arguments: {
+            id: {
+              type: 'string',
+              defaultValue: 'i',
+            },
+            type: {
+              type: 'string',
+              defaultValue: 'p',
+            },
+          },
+        },
+        `---交互`,
+        {
+          opcode: 'whenelement',
+          blockType: 'hat',
+          text: this.formatMessage('WitCatMarkDown.whenelement'),
+          arguments: {
+            v: {
+              type: 'string',
+              menu: 'eventnames',
+              defaultValue: 'click',
+            },
+          },
+        },
+        {
+          opcode: 'hover',
+          blockType: 'Boolean',
+          text: this.formatMessage('WitCatMarkDown.hover'),
+          arguments: {
+            id: {
+              type: 'string',
+              defaultValue: 'i',
+            },
+            number: {
+              type: 'number',
+              defaultValue: '1',
+            },
+            type: {
+              type: 'string',
+              defaultValue: 'img',
+            },
+          },
+        },
+        {
+          opcode: 'dblclick',
+          blockType: 'Boolean',
+          text: this.formatMessage('WitCatMarkDown.dblclick'),
+          arguments: {
+            id: {
+              type: 'string',
+              defaultValue: 'i',
+            },
+            number: {
+              type: 'number',
+              defaultValue: '1',
+            },
+            type: {
+              type: 'string',
+              defaultValue: 'img',
+            },
+          },
+        },
+        {
+          opcode: 'longpress',
+          blockType: 'Boolean',
+          text: this.formatMessage('WitCatMarkDown.longpress'),
+          arguments: {
+            id: {
+              type: 'string',
+              defaultValue: 'i',
+            },
+            number: {
+              type: 'number',
+              defaultValue: '1',
+            },
+            type: {
+              type: 'string',
+              defaultValue: 'img',
+            },
+          },
+        },
+        {
+          opcode: 'clicktext',
+          blockType: 'reporter',
+          text: this.formatMessage('WitCatMarkDown.clicktext'),
+          arguments: {},
+        },
+        {
+          opcode: 'oninput',
+          blockType: 'reporter',
+          text: this.formatMessage('WitCatMarkDown.oninput'),
+          arguments: {
+            id: {
+              type: 'string',
+              defaultValue: 'i',
+            },
+          },
+        },
+        {
+          opcode: 'onenter',
+          blockType: 'Boolean',
+          text: this.formatMessage('WitCatMarkDown.onenter'),
+          arguments: {
+            id: {
+              type: 'string',
+              defaultValue: 'i',
+            },
+          },
+        },
+        `---主题与渲染`,
+        {
+          opcode: 'theme',
+          blockType: 'command',
+          text: this.formatMessage('WitCatMarkDown.theme'),
+          arguments: {
+            id: {
+              type: 'string',
+              defaultValue: 'i',
+            },
+            type: {
+              type: 'string',
+              menu: 'theme',
+            },
+          },
+        },
+        {
+          opcode: 'setbg',
+          blockType: 'command',
+          text: this.formatMessage('WitCatMarkDown.setbg'),
+          arguments: {
+            id: {
+              type: 'string',
+              defaultValue: 'i',
+            },
+            bg: {
+              type: 'string',
+              menu: 'setbgm',
+            },
+            text: {
+              type: 'string',
+              defaultValue: '#ffffff',
+            },
+          },
+        },
+        {
+          opcode: 'setcss',
+          blockType: 'command',
+          text: this.formatMessage('WitCatMarkDown.setcss'),
+          arguments: {
+            text: {
+              type: 'string',
+              defaultValue: '.WitCatMarkDown{}',
+            },
+          },
+        },
+        {
+          opcode: 'setfontsize',
+          blockType: 'command',
+          text: this.formatMessage('WitCatMarkDown.setfontsize'),
+          arguments: {
+            id: {
+              type: 'string',
+              defaultValue: 'i',
+            },
+            num: {
+              type: 'number',
+              defaultValue: '0',
+            },
+            type: {
+              type: 'string',
+              defaultValue: 'p',
+            },
+            text: {
+              type: 'number',
+              defaultValue: '16',
+            },
+          },
+        },
+        {
+          opcode: 'setlineheight',
+          blockType: 'command',
+          text: this.formatMessage('WitCatMarkDown.setlineheight'),
+          arguments: {
+            id: {
+              type: 'string',
+              defaultValue: 'i',
+            },
+            num: {
+              type: 'number',
+              defaultValue: '0',
+            },
+            type: {
+              type: 'string',
+              defaultValue: 'p',
+            },
+            text: {
+              type: 'number',
+              defaultValue: '1.5',
+            },
+          },
+        },
+        {
+          opcode: 'setelementcss',
+          blockType: 'command',
+          text: this.formatMessage('WitCatMarkDown.setelementcss'),
+          arguments: {
+            id: {
+              type: 'string',
+              defaultValue: 'i',
+            },
+            num: {
+              type: 'number',
+              defaultValue: '0',
+            },
+            type: {
+              type: 'string',
+              defaultValue: 'p',
+            },
+            text: {
+              type: 'string',
+              defaultValue: 'color: red;',
+            },
+          },
+        },
+        {
+          opcode: 'mathon',
+          blockType: 'command',
+          text: this.formatMessage('WitCatMarkDown.mathon'),
+          arguments: {
+            type: {
+              type: 'string',
+              menu: 'typess',
+            },
+          },
+        },
+        {
+          opcode: 'getmath',
+          blockType: 'reporter',
+          text: this.formatMessage('WitCatMarkDown.getmath'),
+          arguments: {},
+        },
+        {
+          opcode: 'inserttoc',
+          blockType: 'command',
+          text: this.formatMessage('WitCatMarkDown.inserttoc'),
+          arguments: {
+            id: {
+              type: 'string',
+              defaultValue: 'i',
+            },
+            level: {
+              type: 'number',
+              defaultValue: '3',
+            },
+          },
+        },
+        `---检查与导出`,
+        {
+          opcode: 'isrendered',
+          blockType: 'Boolean',
+          text: this.formatMessage('WitCatMarkDown.isrendered'),
+          arguments: {
+            id: {
+              type: 'string',
+              defaultValue: 'i',
+            },
+          },
+        },
+        {
+          opcode: 'lasterror',
+          blockType: 'reporter',
+          text: this.formatMessage('WitCatMarkDown.lasterror'),
+          arguments: {},
+        },
+        {
+          opcode: 'exporthtml',
+          blockType: 'reporter',
+          text: this.formatMessage('WitCatMarkDown.exporthtml'),
+          arguments: {
+            id: {
+              type: 'string',
+              defaultValue: 'i',
+            },
+          },
+        },
         {
           opcode: 'docss',
           blockType: 'reporter',
@@ -11942,6 +12873,16 @@ class WitCatMarkDown {
             value: 'false',
           },
         ],
+        sandbox: [
+          {
+            text: this.formatMessage('WitCatMarkDown.sandbox.1'),
+            value: 'true',
+          },
+          {
+            text: this.formatMessage('WitCatMarkDown.sandbox.2'),
+            value: 'false',
+          },
+        ],
         code: [
           {
             text: 'javascript',
@@ -12034,6 +12975,76 @@ class WitCatMarkDown {
           {
             text: this.formatMessage('WitCatMarkDown.setinsite.2'),
             value: 'textShadow',
+          },
+        ],
+        showhide: [
+          {
+            text: this.formatMessage('WitCatMarkDown.showhide.1'),
+            value: 'show',
+          },
+          {
+            text: this.formatMessage('WitCatMarkDown.showhide.2'),
+            value: 'hide',
+          },
+        ],
+        scrollbehavior: [
+          {
+            text: this.formatMessage('WitCatMarkDown.scrollbehavior.1'),
+            value: 'smooth',
+          },
+          {
+            text: this.formatMessage('WitCatMarkDown.scrollbehavior.2'),
+            value: 'auto',
+          },
+        ],
+        getattr: [
+          {
+            text: this.formatMessage('WitCatMarkDown.getattr.1'),
+            value: 'text',
+          },
+          {
+            text: this.formatMessage('WitCatMarkDown.getattr.2'),
+            value: 'html',
+          },
+          {
+            text: this.formatMessage('WitCatMarkDown.getattr.3'),
+            value: 'color',
+          },
+          {
+            text: this.formatMessage('WitCatMarkDown.getattr.4'),
+            value: 'fontSize',
+          },
+          {
+            text: this.formatMessage('WitCatMarkDown.getattr.5'),
+            value: 'width',
+          },
+          {
+            text: this.formatMessage('WitCatMarkDown.getattr.6'),
+            value: 'height',
+          },
+        ],
+        eventnames: WITCAT_DOM_EVENTS.map((eventInfo) => ({
+          text: this.formatMessage(`WitCatMarkDown.event.${eventInfo.name}`),
+          value: eventInfo.name,
+        })),
+        theme: [
+          {
+            text: this.formatMessage('WitCatMarkDown.theme.1'),
+            value: 'light',
+          },
+          {
+            text: this.formatMessage('WitCatMarkDown.theme.2'),
+            value: 'dark',
+          },
+        ],
+        setbgm: [
+          {
+            text: this.formatMessage('WitCatMarkDown.setbg.1'),
+            value: 'color',
+          },
+          {
+            text: this.formatMessage('WitCatMarkDown.setbg.2'),
+            value: 'image',
           },
         ],
         show: [
@@ -12135,6 +13146,7 @@ class WitCatMarkDown {
     try {
       styles = JSON.parse(args.text);
     } catch (e) {
+      this._lastError = String(e.message || e);
       console.error("WitCatMarkDown", e);
       if (e.message.includes("is not valid JSON"))
         console.error("WitCatMarkDown", "请输入正确的json字符串");
@@ -12143,11 +13155,22 @@ class WitCatMarkDown {
     if (styles === null || typeof styles !== 'object') {
       return;
     }
+
     for (const [prop, value] of Object.entries(styles)) {
-      if (!prop || String(value).includes('url')) {
+      if (!prop) {
         continue;
       }
-      target.style.setProperty(prop, String(value));
+      const val = String(value);
+      // 过滤 URL（含 data: 方案），允许纯 URL 或包含允许域名（.monkeycode-ai.online）的 URL
+      const urlMatch = val.match(/url\(\s*['"]?([^'")]+)['"]?\s*\)/);
+      if (urlMatch) {
+        const inner = urlMatch[1].trim();
+        if (!this._isAllowedUrl(inner)) continue;
+      } else if (/^(data:|https?:\/\/)/.test(val)) {
+        // 裸 URL 值同样按域名单过滤
+        if (!this._isAllowedUrl(val)) continue;
+      }
+      target.style.setProperty(prop, val);
     }
   }
 
@@ -12178,7 +13201,7 @@ class WitCatMarkDown {
    */
   create(args) {
     if (this.canvas() === null || this.inputParent() === null) {
-      console.error(this.canvas(), this.inputParent());
+      console.warn('WitCatMarkDown: canvas 或 inputParent 尚未就绪，跳过本次创建');
       return;
     }
     let x = Number(args.x);
@@ -12196,7 +13219,7 @@ class WitCatMarkDown {
 
     let search = this._getEl(args.id);
     if (search !== null) {
-      this.inputParent().removeChild(search);
+      search.remove();
       search = null;
     }
     if (search === null) {
@@ -12215,8 +13238,8 @@ class WitCatMarkDown {
     sstyle.top = `${y}%`;
     sstyle.width = `${width}%`;
     sstyle.height = `${height}%`;
-    search.innerHTML = `<div class='WitCatMarkDown'>${markdownToHtml(String(args.text), { docId: String(args.id) })}</div>`;
-    Prism.highlightAllUnder(search);
+    search.innerHTML = `<div class='WitCatMarkDown'>${this._renderHtml(args.text, args.id)}</div>`;
+    this._highlightCode(search);
 
   }
 
@@ -12269,8 +13292,8 @@ class WitCatMarkDown {
           sstyle.height = `${Number(height)}%`;
           break;
         case 'content':
-          search.innerHTML = `<div class='WitCatMarkDown'>${markdownToHtml(String(args.text), { docId: String(args.id) })}</div>`;
-          Prism.highlightAllUnder(search);
+          search.innerHTML = `<div class='WitCatMarkDown'>${this._renderHtml(args.text, args.id)}</div>`;
+          this._highlightCode(search);
           break;
         case 'perspective':
           search.firstChild.style.perspective = `${Number(args.text)}px`;
@@ -12317,25 +13340,23 @@ class WitCatMarkDown {
     search.style.position = 'fixed';
     search.style.visibility = 'hidden';
     search.style.pointerEvents = 'none';
-    search.className = 'WitCatMarkDown';
-    search.innerHTML = `<div class='WitCatMarkDown'>${markdownToHtml(String(args.content))}</div>`;
-    document.body.appendChild(search);
-    const cvsw = this.canvas().offsetWidth;
-    const cvsh = this.canvas().offsetHeight;
-    let outw;
-    switch (args.type) {
-      case 'width':
-        outw = search.offsetWidth;
-        search.remove();
-        return outw * (this.runtime.stageWidth / (cvsw * 0.748));
-      case 'height':
-        outw = search.offsetHeight;
-        search.remove();
-        return outw * (this.runtime.stageHeight / (cvsh * 0.777));
-      default:
-        // 未知类型时也要移除临时元素，避免泄漏
-        search.remove();
-        return '';
+    search.className = 'WitCatMarkDownMeasure';
+    try {
+      search.innerHTML = `<div class='WitCatMarkDown'>${this._renderHtml(args.content, args.id)}</div>`;
+      document.body.appendChild(search);
+      const cvsw = this.canvas().offsetWidth;
+      const cvsh = this.canvas().offsetHeight;
+      switch (args.type) {
+        case 'width':
+          return search.offsetWidth * (this.runtime.stageWidth / (cvsw * CANVAS_WIDTH_RATIO));
+        case 'height':
+          return search.offsetHeight * (this.runtime.stageHeight / (cvsh * CANVAS_HEIGHT_RATIO));
+        default:
+          return '';
+      }
+    } finally {
+      // 无论成功失败都移除临时元素，避免 DOM 泄漏
+      search.remove();
     }
   }
 
@@ -12358,6 +13379,23 @@ class WitCatMarkDown {
         this.resize = null;
       }
     }
+  }
+
+  /**
+   * 设置沙盒模式。开启后 markdown 中的原始 HTML 会被转义为文本
+   * @param {object} args
+   * @param {string} args.type 'true' 开启，'false' 关闭
+   */
+  sandbox(args) {
+    this.sandboxMode = String(args.type) === 'true';
+  }
+
+  /**
+   * 获取当前沙盒模式
+   * @return {string}
+   */
+  getsandbox() {
+    return this.sandboxMode ? 'true' : 'false';
   }
 
   setinsite(args) {
@@ -12386,27 +13424,51 @@ class WitCatMarkDown {
    * @param {string} args.name 要获取的字体
    */
   loadfont(args) {
-    if (String(args.text).startsWith("data:application/font-woff;")) {
+    const url = String(args.text);
+    const name = String(args.name);
+    const self = this;
+    const addFont = (buffer) => {
+      try {
+        document.fonts.add(new FontFace(name, buffer));
+      } catch (error) {
+        self._lastError = String(error.message || error);
+        console.error('WitCatMarkDown 字体加载失败:', error);
+      }
+    };
+
+    if (url.startsWith('data:application/font-woff;')) {
       // Handle data URI directly
-      const font = new FontFace(String(args.name), `url(${String(args.text)})`);
-      font.load().then(function(loadedFont) {
-        document.fonts.add(loadedFont);
-      }).catch(function(error) {
-        console.error('Font loading failed:', error);
-      });
+      const font = new FontFace(name, `url(${url})`);
+      font
+        .load()
+        .then((loadedFont) => document.fonts.add(loadedFont))
+        .catch((error) => {
+          self._lastError = String(error.message || error);
+          console.error('WitCatMarkDown 字体加载失败:', error);
+        });
     } else if (
-      String(args.text).startsWith('https://m.ccw.site') ||
-      String(args.text).startsWith('https://m.xiguacity') ||
-      String(args.text).startsWith('https://static.xiguacity')
+      url.startsWith('https://m.ccw.site') ||
+      url.startsWith('https://m.xiguacity') ||
+      url.startsWith('https://static.xiguacity')
     ) {
-      const xhr = new XMLHttpRequest(); // Define an asynchronous object
-      xhr.open('GET', String(args.text), true); // Asynchronous GET method to load the font
-      xhr.responseType = 'arraybuffer'; // Change the asynchronous fetch type to arraybuffer binary type
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url, true);
+      xhr.responseType = 'arraybuffer';
       xhr.onload = function () {
-        document.fonts.add(new FontFace(String(args.name), this.response)); // Add the font object to the page
+        if (xhr.status >= 200 && xhr.status < 300) {
+          addFont(xhr.response);
+        } else {
+          self._lastError = '字体加载失败: HTTP ' + xhr.status;
+          console.error('WitCatMarkDown 字体加载失败: HTTP ' + xhr.status);
+        }
+      };
+      xhr.onerror = function () {
+        self._lastError = '字体加载失败: 网络错误';
+        console.error('WitCatMarkDown 字体加载失败: 网络错误');
       };
       xhr.send();
     } else {
+      self._lastError = '不允许的链接';
       console.warn('不允许的链接\nDisallowed links');
     }
   }
@@ -12422,7 +13484,7 @@ class WitCatMarkDown {
         }
         switch (args.clickmenu) {
           case 'markdown':
-            out = e.parentElement.id.split('WitCatMarkDown')[1];
+            out = e.parentElement && e.parentElement.id ? e.parentElement.id.slice('WitCatMarkDown'.length) : '';
             break;
           case 'type':
             out = markdownmousedown.target.tagName.toLowerCase();
@@ -12457,7 +13519,7 @@ class WitCatMarkDown {
         }
         switch (args.clickmenu) {
           case 'markdown':
-            out = e.parentElement.id.split('WitCatMarkDown')[1];
+            out = e.parentElement && e.parentElement.id ? e.parentElement.id.slice('WitCatMarkDown'.length) : '';
             break;
           case 'type':
             out = touchEvent.target.tagName.toLowerCase();
@@ -12522,8 +13584,11 @@ class WitCatMarkDown {
         const a = Array.from(search.getElementsByTagName('pre')[args.num - 1].children);
         a.forEach((e) => {
           e.className = args.name;
+          if (e.dataset) {
+            e.dataset.witcatHighlighted = '';
+          }
         });
-        Prism.highlightAllUnder(search);
+        this._highlightCode(search, true);
       }
     }
   }
@@ -12573,10 +13638,19 @@ class WitCatMarkDown {
     if (search !== null) {
       const ele = search.getElementsByTagName(String(args.type))[Number(args.number) - 1];
       if (ele !== undefined) {
+        ele.style.transition = search.style.transition;
         ele.style.display = 'inline-block';
-        ele.style.transform = `${ele.style.transform.replace(/\brotateX\([^)]*\)/g, '')} rotateX(${args.x}deg)`;
-        ele.style.transform = `${ele.style.transform.replace(/\brotateY\([^)]*\)/g, '')} rotateY(${args.y}deg)`;
-        ele.style.transform = `${ele.style.transform.replace(/\brotateZ\([^)]*\)/g, '')} rotateZ(${args.z}deg)`;
+        const transform = ele.style.transform
+          .replace(/\brotateX\([^)]*\)/g, '')
+          .replace(/\brotateY\([^)]*\)/g, '')
+          .replace(/\brotateZ\([^)]*\)/g, '')
+          .trim();
+        const parts = [`rotateX(${args.x}deg)`, `rotateY(${args.y}deg)`, `rotateZ(${args.z}deg)`];
+        if (transform) {
+          ele.style.transform = `${transform} ${parts.join(' ')}`;
+        } else {
+          ele.style.transform = parts.join(' ');
+        }
       }
     }
   }
@@ -12586,6 +13660,516 @@ class WitCatMarkDown {
     if (search !== null) {
       search.style.transition = `all ${args.s}s ${args.timing}`;
     }
+  }
+
+  /**
+   * 设置元素透明度。num > 0 时作用于第 num 个元素，否则作用于整个内容容器
+   * @param {Object} args
+   * @param {SCarg} args.id ID
+   * @param {SCarg} args.num 序号
+   * @param {SCarg} args.type 标签类型
+   * @param {SCarg} args.text 透明度（0-100）
+   */
+  setopacity(args) {
+    const search = this._getEl(args.id);
+    if (search === null) {
+      return;
+    }
+    const opacity = String(this._clamp(Number(args.text), 0, 100) / 100);
+    if (Number(args.num) > 0) {
+      const ele = search.getElementsByTagName(String(args.type))[Number(args.num) - 1];
+      if (ele === undefined) {
+        return;
+      }
+      ele.style.opacity = opacity;
+    } else {
+      const root = search.firstElementChild || search;
+      root.style.opacity = opacity;
+    }
+  }
+
+  /**
+   * 显示或隐藏整个 markdown
+   * @param {Object} args
+   * @param {SCarg} args.id ID
+   * @param {SCarg} args.type show / hide
+   */
+  showhide(args) {
+    const search = this._getEl(args.id);
+    if (search === null) {
+      return;
+    }
+    search.style.display = String(args.type) === 'hide' ? 'none' : '';
+  }
+
+  /**
+   * 设置元素层级。num > 0 时作用于第 num 个元素，否则作用于整个容器
+   * @param {Object} args
+   * @param {SCarg} args.id ID
+   * @param {SCarg} args.num 序号
+   * @param {SCarg} args.type 标签类型
+   * @param {SCarg} args.text z-index
+   */
+  setz(args) {
+    const search = this._getEl(args.id);
+    if (search === null) {
+      return;
+    }
+    const z = String(Number(args.text) || 0);
+    if (Number(args.num) > 0) {
+      const ele = search.getElementsByTagName(String(args.type))[Number(args.num) - 1];
+      if (ele === undefined) {
+        return;
+      }
+      ele.style.zIndex = z;
+    } else {
+      search.style.zIndex = z;
+    }
+  }
+
+  /**
+   * 滚动到指定元素
+   * @param {Object} args
+   * @param {SCarg} args.id ID
+   * @param {SCarg} args.num 序号
+   * @param {SCarg} args.type 标签类型
+   * @param {SCarg} args.behavior smooth / auto
+   */
+  scrollto(args) {
+    const search = this._getEl(args.id);
+    if (search === null) {
+      return;
+    }
+    const num = Number(args.num);
+    if (!(num > 0)) {
+      return;
+    }
+    const ele = search.getElementsByTagName(String(args.type))[num - 1];
+    if (ele === undefined) {
+      return;
+    }
+    const behavior = String(args.behavior) === 'smooth' ? 'smooth' : 'auto';
+    // 累加 offsetTop 得到相对滚动容器的布局坐标，避免受 CSS transform 缩放影响
+    let top = 0;
+    let node = ele;
+    while (node && node !== search) {
+      top += node.offsetTop;
+      node = node.offsetParent;
+    }
+    search.scrollTo({ top, behavior });
+  }
+
+  /**
+   * 获取第 num 个元素的属性
+   * @param {Object} args
+   * @param {SCarg} args.id ID
+   * @param {SCarg} args.num 序号
+   * @param {SCarg} args.type 标签类型
+   * @param {SCarg} args.attr 属性名
+   * @return {string|number}
+   */
+  getelement(args) {
+    const search = this._getEl(args.id);
+    if (search === null) {
+      return '';
+    }
+    const num = Number(args.num);
+    if (!(num > 0)) {
+      return '';
+    }
+    const ele = search.getElementsByTagName(String(args.type))[num - 1];
+    if (ele === undefined) {
+      return '';
+    }
+    switch (String(args.attr)) {
+      case 'text':
+        return ele.innerText;
+      case 'html':
+        return ele.innerHTML;
+      case 'color':
+        return getComputedStyle(ele).color;
+      case 'fontSize':
+        return getComputedStyle(ele).fontSize;
+      case 'width':
+        return ele.offsetWidth;
+      case 'height':
+        return ele.offsetHeight;
+      default:
+        return '';
+    }
+  }
+
+  /**
+   * 设置第 num 个元素的内容
+   * @param {Object} args
+   * @param {SCarg} args.id ID
+   * @param {SCarg} args.num 序号
+   * @param {SCarg} args.type 标签类型
+   * @param {SCarg} args.text 新内容
+   */
+  setelement(args) {
+    const search = this._getEl(args.id);
+    if (search === null) {
+      return;
+    }
+    const num = Number(args.num);
+    if (!(num > 0)) {
+      return;
+    }
+    const ele = search.getElementsByTagName(String(args.type))[num - 1];
+    if (ele === undefined) {
+      return;
+    }
+    ele.innerHTML = String(args.text);
+  }
+
+  /**
+   * 获取指定标签元素的数量
+   * @param {Object} args
+   * @param {SCarg} args.id ID
+   * @param {SCarg} args.type 标签类型
+   * @return {number}
+   */
+  getcount(args) {
+    const search = this._getEl(args.id);
+    if (search === null) {
+      return 0;
+    }
+    return search.getElementsByTagName(String(args.type)).length;
+  }
+
+  /**
+   * 判断事件目标是否命中容器内指定元素
+   * @param {HTMLElement} search 容器
+   * @param {SCarg} number 序号，<=0 表示任意同类元素
+   * @param {SCarg} type 标签类型
+   * @param {{target?: EventTarget}} evt 事件状态
+   * @return {boolean}
+   */
+  _eventHits(search, number, type, evt) {
+    if (!evt || !evt.target) {
+      return false;
+    }
+    if (Number(number) > 0) {
+      const ele = search.getElementsByTagName(String(type))[Number(number) - 1];
+      return ele !== undefined && evt.target === ele;
+    }
+    const ele = Array.from(search.getElementsByTagName(String(type)));
+    return ele.some((e) => e === evt.target);
+  }
+
+  /**
+   * 判断 URL 是否在允许的域名单内（data: 或 .monkeycode-ai.online）
+   * @param {string} u
+   * @return {boolean}
+   */
+  _isAllowedUrl(u) {
+    if (typeof u !== 'string' || u === '') {
+      return false;
+    }
+    if (u.startsWith('data:')) {
+      return true;
+    }
+    if (u.startsWith('https://') || u.startsWith('http://')) {
+      return u.includes('.monkeycode-ai.online');
+    }
+    return false;
+  }
+
+  /**
+   * 纯数字补 px，其余按原始 CSS 值透传
+   * @param {SCarg} value
+   * @return {string}
+   */
+  _cssLength(value) {
+    const raw = String(value).trim();
+    return /^-?\d+(\.\d+)?$/.test(raw) ? `${raw}px` : raw;
+  }
+
+  /**
+   * 鼠标是否悬停在指定元素上
+   * @param {Object} args
+   * @return {boolean}
+   */
+  hover(args) {
+    const search = this._getEl(args.id);
+    if (search === null) {
+      return false;
+    }
+    return this._eventHits(search, args.number, args.type, hoverEvent);
+  }
+
+  /**
+   * 指定元素是否被双击
+   * @param {Object} args
+   * @return {boolean}
+   */
+  dblclick(args) {
+    const search = this._getEl(args.id);
+    if (search === null) {
+      return false;
+    }
+    return this._eventHits(search, args.number, args.type, dblclickEvent);
+  }
+
+  /**
+   * 指定元素是否被长按（超过 LONG_PRESS_DELAY）
+   * @param {Object} args
+   * @return {boolean}
+   */
+  longpress(args) {
+    const search = this._getEl(args.id);
+    if (search === null) {
+      return false;
+    }
+    return this._eventHits(search, args.number, args.type, longpressEvent);
+  }
+
+  /**
+   * 上次点击元素的文本
+   * @return {string}
+   */
+  clicktext() {
+    const target = markdownmousedown.target;
+    if (!target || typeof target.closest !== 'function') {
+      return '';
+    }
+    if (!target.closest('.WitCatMarkDownOut')) {
+      return '';
+    }
+    return target.innerText || '';
+  }
+
+  /**
+   * 可编辑 markdown 中最近一次输入的内容
+   * @param {Object} args
+   * @return {string}
+   */
+  oninput(args) {
+    const target = inputEvent.target;
+    if (!target) {
+      return '';
+    }
+    const search = this._getEl(args.id);
+    if (search === null || !search.contains(target)) {
+      return '';
+    }
+    return target.innerText || '';
+  }
+
+  /**
+   * 可编辑 markdown 中是否刚按下回车
+   * @param {Object} args
+   * @return {boolean}
+   */
+  onenter(args) {
+    const target = enterEvent.target;
+    if (!target) {
+      return false;
+    }
+    const search = this._getEl(args.id);
+    if (search === null) {
+      return false;
+    }
+    return search.contains(target);
+  }
+
+  /**
+   * 切换亮色/暗色主题
+   * @param {Object} args
+   */
+  theme(args) {
+    const search = this._getEl(args.id);
+    if (search === null) {
+      return;
+    }
+    search.classList.toggle('WitCatMarkDown-dark', String(args.type) === 'dark');
+  }
+
+  /**
+   * 设置背景色或背景图
+   * @param {Object} args
+   */
+  setbg(args) {
+    const search = this._getEl(args.id);
+    if (search === null) {
+      return;
+    }
+    const value = String(args.text);
+    if (String(args.bg) !== 'image') {
+      search.style.backgroundColor = value;
+      return;
+    }
+    if (!this._isAllowedUrl(value)) {
+      this._lastError = '不允许的背景图链接';
+      console.warn('WitCatMarkDown', '不允许的背景图链接');
+      return;
+    }
+    search.style.backgroundImage = `url(${value})`;
+    search.style.backgroundSize = 'cover';
+    search.style.backgroundPosition = 'center';
+  }
+
+  /**
+   * 注入全局自定义 CSS，传入空字符串可清除
+   * @param {Object} args
+   */
+  setcss(args) {
+    if (this._customCssEl === null) {
+      const el = document.createElement('style');
+      el.id = 'WitCatMarkDownCustomCss';
+      document.head.appendChild(el);
+      this._customCssEl = el;
+    }
+    this._customCssEl.textContent = String(args.text);
+  }
+
+  /**
+   * 设置字号。num > 0 时作用于第 num 个元素，否则作用于整个内容容器
+   * @param {Object} args
+   */
+  setfontsize(args) {
+    this._setStyleValue(args, (ele) => {
+      ele.style.fontSize = this._cssLength(args.text);
+    });
+  }
+
+  /**
+   * 设置行高。num > 0 时作用于第 num 个元素，否则作用于整个内容容器
+   * @param {Object} args
+   */
+  setlineheight(args) {
+    this._setStyleValue(args, (ele) => {
+      ele.style.lineHeight = String(args.text);
+    });
+  }
+
+  /**
+   * 设置元素 CSS。num > 0 时作用于第 num 个元素，否则作用于整个内容容器
+   * @param {Object} args
+   * @param {SCarg} args.id ID
+   * @param {SCarg} args.num 序号
+   * @param {SCarg} args.type 标签类型
+   * @param {SCarg} args.text CSS 文本
+   */
+  setelementcss(args) {
+    this._setStyleValue(args, (ele) => {
+      ele.style.cssText = String(args.text);
+    });
+  }
+
+  /**
+   * 按 num 将样式变更应用到第 num 个元素或整个内容容器
+   * @param {Object} args
+   * @param {(ele: HTMLElement) => void} apply
+   */
+  _setStyleValue(args, apply) {
+    const search = this._getEl(args.id);
+    if (search === null) {
+      return;
+    }
+    if (Number(args.num) > 0) {
+      const ele = search.getElementsByTagName(String(args.type))[Number(args.num) - 1];
+      if (ele === undefined) {
+        return;
+      }
+      apply(ele);
+    } else {
+      apply(search.firstElementChild || search);
+    }
+  }
+
+  /**
+   * 设置数学公式开关
+   * @param {Object} args
+   */
+  mathon(args) {
+    this.mathMode = String(args.type) === 'true';
+  }
+
+  /**
+   * 获取数学公式开关
+   * @return {string}
+   */
+  getmath() {
+    return this.mathMode ? 'true' : 'false';
+  }
+
+  /**
+   * 在内容顶部插入可点击目录
+   * @param {Object} args
+   */
+  inserttoc(args) {
+    const search = this._getEl(args.id);
+    if (search === null) {
+      return;
+    }
+    const content = search.querySelector('.WitCatMarkDown');
+    if (content === null) {
+      return;
+    }
+    const old = content.querySelector('.WitCatMarkDown-toc');
+    if (old !== null) {
+      old.remove();
+    }
+    const rawLevel = Number(args.level);
+    const maxLevel = rawLevel >= 1 ? this._clamp(rawLevel, 1, 6) : 3;
+    const headings = Array.from(content.querySelectorAll('h1, h2, h3, h4, h5, h6'))
+      .filter((h) => Number(h.tagName.charAt(1)) <= maxLevel);
+    if (headings.length === 0) {
+      return;
+    }
+    const ul = document.createElement('ul');
+    ul.className = 'WitCatMarkDown-toc';
+    headings.forEach((h, i) => {
+      h.setAttribute('data-witcat-anchor', String(i));
+      const li = document.createElement('li');
+      li.className = 'WitCatMarkDown-toc-item';
+      li.setAttribute('data-target', String(i));
+      li.textContent = h.innerText;
+      li.style.paddingLeft = `${(Number(h.tagName.charAt(1)) - 1) * 16}px`;
+      ul.appendChild(li);
+    });
+    content.insertBefore(ul, content.firstChild);
+  }
+
+  /**
+   * markdown 是否已渲染出内容
+   * @param {Object} args
+   * @return {boolean}
+   */
+  isrendered(args) {
+    const search = this._getEl(args.id);
+    if (search === null) {
+      return false;
+    }
+    const content = search.querySelector('.WitCatMarkDown');
+    if (content === null) {
+      return false;
+    }
+    return content.childNodes.length > 0 || (content.textContent || '').length > 0;
+  }
+
+  /**
+   * 获取最近一次错误信息
+   * @return {string}
+   */
+  lasterror() {
+    return this._lastError || '';
+  }
+
+  /**
+   * 导出完整渲染后的 HTML
+   * @param {Object} args
+   * @return {string}
+   */
+  exporthtml(args) {
+    const search = this._getEl(args.id);
+    if (search === null) {
+      return '';
+    }
+    const content = search.querySelector('.WitCatMarkDown');
+    return content ? content.outerHTML : '';
   }
 
   settextalign(args) {
@@ -12628,7 +14212,7 @@ class WitCatMarkDown {
     }
     const search = this._getEl(args.id);
     if (search !== null) {
-      this.inputParent().removeChild(search);
+      search.remove();
     }
   }
 
@@ -12641,9 +14225,9 @@ class WitCatMarkDown {
     if (this.inputParent() === null) {
       return;
     }
-    const search = document.getElementsByClassName('WitCatMarkDown');
-    for (const item of Array.from(search)) {
-      if (item.parentElement) item.parentElement.remove();
+    const containers = document.getElementsByClassName('WitCatMarkDownOut');
+    for (const item of Array.from(containers)) {
+      item.remove();
     }
   }
 
@@ -12701,6 +14285,50 @@ class WitCatMarkDown {
       }
       default:
         return '';
+    }
+  }
+
+  /**
+   * 扩展卸载时清理监听器、观察器与 DOM，避免资源泄漏
+   */
+  _dispose() {
+    window.removeEventListener('mousedown', this._onMouseDown);
+    window.removeEventListener('mousemove', this._onMouseMove);
+    window.removeEventListener('touchstart', this._onTouchStart);
+    window.removeEventListener('touchmove', this._onTouchMove);
+    window.removeEventListener('dblclick', this._onDblclick, true);
+    window.removeEventListener('mousedown', this._onLongPressStart);
+    window.removeEventListener('mouseup', this._onLongPressEnd);
+    window.removeEventListener('touchstart', this._onLongPressStart);
+    window.removeEventListener('touchend', this._onLongPressEnd);
+    window.removeEventListener('touchcancel', this._onLongPressEnd);
+    document.removeEventListener('input', this._onInput, true);
+    document.removeEventListener('keydown', this._onKeydown, true);
+    document.removeEventListener('click', this._onTocClick, true);
+    if (this._domEventNames) {
+      for (const eventName of this._domEventNames) {
+        window.removeEventListener(eventName, this._onMarkdownDomEvent, true);
+      }
+    }
+    if (pressTimer !== null) {
+      clearTimeout(pressTimer);
+      pressTimer = null;
+    }
+    if (this.resize !== null) {
+      this.resize.disconnect();
+      this.resize = null;
+    }
+    this.deleteall();
+    if (this._styleEl !== null && this._styleEl.parentNode !== null) {
+      this._styleEl.remove();
+    }
+    this._styleEl = null;
+    if (this._customCssEl !== null && this._customCssEl.parentNode !== null) {
+      this._customCssEl.remove();
+    }
+    this._customCssEl = null;
+    if (this._htmlWarned) {
+      this._htmlWarned.clear();
     }
   }
 }
